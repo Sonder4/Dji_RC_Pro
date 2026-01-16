@@ -39,14 +39,42 @@ class MsdkManager private constructor() {
         val leftStickY: Int = 127,
         val rightStickX: Int = 127,
         val rightStickY: Int = 127,
-        val buttonMask: Int = 0
-    )
+        val buttonMask: Int = 0,
+        val leftWheel: Int = 127,
+        val rightWheel: Int = 127,
+        val androidDebug: String = "",
+        val msdkDebug: String = ""
+    ) {
+        val debugInfo: String
+            get() = "$androidDebug | $msdkDebug"
+    }
 
     private val _controllerState = MutableStateFlow(ControllerState())
     val controllerState: StateFlow<ControllerState> = _controllerState.asStateFlow()
 
     private val _isRegistered = MutableStateFlow(false)
     val isRegistered: StateFlow<Boolean> = _isRegistered.asStateFlow()
+
+    fun updateAndroidDebug(info: String) {
+        _controllerState.update { state -> state.copy(androidDebug = info) }
+    }
+    
+    // Deprecated, mapped to androidDebug for compatibility if needed, or removed
+    fun updateDebugInfo(info: String) {
+         updateAndroidDebug(info)
+    }
+
+    private fun updateMsdkDebug(key: String, value: String) {
+        _controllerState.update { state -> 
+            val current = state.msdkDebug
+            val newDebug = if (current.contains(key)) {
+                current.replace(Regex("$key: -?\\d+"), "$key: $value")
+            } else {
+                "$current $key: $value"
+            }
+            state.copy(msdkDebug = newDebug)
+        }
+    }
 
     // Allow external updates (e.g. from Virtual Sticks)
     fun updateLeftStick(x: Int, y: Int) {
@@ -59,6 +87,14 @@ class MsdkManager private constructor() {
         _controllerState.update { state ->
             state.copy(rightStickX = x, rightStickY = y)
         }
+    }
+
+    fun updateLeftWheel(value: Int) {
+        _controllerState.update { state -> state.copy(leftWheel = value) }
+    }
+
+    fun updateRightWheel(value: Int) {
+        _controllerState.update { state -> state.copy(rightWheel = value) }
     }
 
     fun init(context: Context) {
@@ -162,6 +198,33 @@ class MsdkManager private constructor() {
                 _controllerState.update { state ->
                     state.copy(rightStickY = byteVal.toInt() and 0xFF)
                 }
+            }
+        }
+
+        // --- Wheels/Dials ---
+        val leftDialKey = KeyTools.createKey(RemoteControllerKey.KeyLeftDial)
+        val rightDialKey = KeyTools.createKey(RemoteControllerKey.KeyRightDial)
+
+        keyManager.listen(leftDialKey, this) { oldValue, newValue: Int? ->
+            newValue?.let {
+                // Log raw value
+                updateMsdkDebug("Left", it.toString())
+ 
+                // Assume range -660..660 like sticks
+                val normalized = normalizeStickValue(it) 
+                val byteVal = StickTransformer.transform(normalized)
+                updateLeftWheel(byteVal.toInt() and 0xFF)
+            }
+        }
+
+        keyManager.listen(rightDialKey, this) { oldValue, newValue: Int? ->
+            newValue?.let {
+                // Log raw value
+                updateMsdkDebug("Right", it.toString())
+
+                val normalized = normalizeStickValue(it)
+                val byteVal = StickTransformer.transform(normalized)
+                updateRightWheel(byteVal.toInt() and 0xFF)
             }
         }
 

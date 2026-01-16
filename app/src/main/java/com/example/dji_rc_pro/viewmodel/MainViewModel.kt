@@ -5,6 +5,7 @@ import android.content.Intent
 import android.bluetooth.le.ScanResult
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+
 import com.example.dji_rc_pro.domain.ble.BleManager
 import com.example.dji_rc_pro.domain.config.ConfigRepository
 import com.example.dji_rc_pro.domain.input.StickTransformer
@@ -26,9 +27,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     // BLE State
     private val bleManager = BleManager.getInstance(application)
-    val bleScanResults: StateFlow<List<ScanResult>> = bleManager.scanResults
+    val bleScanResults: StateFlow<List<BleManager.BleDevice>> = bleManager.scanResults
     val bleConnectionState: StateFlow<Int> = bleManager.connectionState
     val isBleScanning: StateFlow<Boolean> = bleManager.isScanning
+
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            bleConnectionState.collect { state ->
+                if (state == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
+                    showToast("Bluetooth Connected", 500)
+                } else if (state == android.bluetooth.BluetoothProfile.STATE_DISCONNECTED) {
+                    // Optional: showToast("Disconnected", 500)
+                }
+            }
+        }
+    }
+
+    private fun showToast(message: String, durationMs: Long) {
+        viewModelScope.launch {
+            _toastMessage.value = message
+            kotlinx.coroutines.delay(durationMs)
+            _toastMessage.value = null
+        }
+    }
 
     private val _isVideoEnabled = MutableStateFlow(false)
     val isVideoEnabled: StateFlow<Boolean> = _isVideoEnabled.asStateFlow()
@@ -75,8 +99,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         bleManager.stopScan()
     }
 
-    fun connectBle(result: ScanResult) {
-        bleManager.connect(result.device, getApplication())
+    fun connectBle(device: BleManager.BleDevice) {
+        bleManager.connect(device.device, getApplication())
         // Auto-start BLE service logic could be here, but let's keep it separate or auto-start on connect?
         // Let's start the service immediately so it's ready to pump data once connected.
         startBleService()

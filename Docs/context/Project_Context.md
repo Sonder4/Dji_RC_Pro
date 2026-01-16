@@ -2,22 +2,25 @@
 
 ## Project Overview
 **Name**: Dji_RC_Pro
-**Goal**: Develop an Android application for DJI RC Pro using MSDK V5, focusing on remote controller data acquisition (sticks, buttons) and Bluetooth/WiFi transmission.
+**Goal**: Develop an Android application for DJI RC Pro using MSDK V5, focusing on remote controller data acquisition (sticks, buttons, wheels) and Bluetooth/WiFi transmission.
 **Tech Stack**: Kotlin 2.1.0, Jetpack Compose, DJI MSDK V5.17.0, Android SDK 34.
 
 ## Current Status
 - **Phase**: Core Integration & Debugging
-- **State**: 🔴 **Blocked** (Runtime Crash)
-- **Blocker**: `NoClassDefFoundError: SDKManager` persists despite successful compilation and installation. The public Maven artifacts for MSDK V5.17.0 seem to be missing core classes.
+- **State**: 🟢 **Active**
+- **Note**: Bluetooth Paired Devices support added. UI refined.
 
 ## Recent Changes
-- **Dependencies**: Upgraded to Kotlin 2.1.0, MSDK 5.17.0. Added `okio`, `wire-runtime`, `lottie`.
-- **Configuration**: Enabled MultiDex, configured `arm64-v8a` ABI filters, added ProGuard rules.
-- **Code**: 
-  - Fixed `MsdkManager` key references.
-  - Implemented reflection for `secneo` initialization (currently commented out).
-  - Added `MultiDex.install(this)` to `NCUApplication`.
-  - Forced app name to "Dji_RC_Pro" via `values-zh-rCN`.
+- **Bluetooth**:
+  - **Paired Devices**: Now automatically loaded and displayed at the top of the scan list.
+  - **Sorting**: List sorted by [Paired Status] -> [RSSI].
+  - **UI**: Added "PAIRED" indicator to device cards.
+- **UI**: 
+  - **Virtual Sticks**: 150dp size, 24dp padding (equidistant).
+  - **Virtual Buttons**: 45dp size.
+  - **Fixes**: Deprecated `LinearProgressIndicator` usage updated.
+- **Input**: 
+  - **Wheel Debug**: Broadened scan to include all axes + VSCROLL/HSCROLL.
 
 ## Build Commands
 - **Build Debug**: `.\gradlew.bat assembleDebug`
@@ -35,10 +38,14 @@
 - [x] Add Virtual Buttons (UI)
 - [x] Fix compilation errors (Kotlin, Compose)
 - [x] Fix App Name issue
-- [ ] **Resolve Runtime Crash (Missing MSDK Classes)**
-- [ ] Verify Stick/Button Data Acquisition
-- [ ] Implement Bluetooth Data Transmission
+- [x] Resolve Runtime Crash (Missing MSDK Classes)
+- [x] Verify Stick/Button Data Acquisition
+- [x] Add Debug Mode for Wheel Input (Dual Source)
+- [x] Update UI Styling (150dp Sticks, 24dp Padding)
+- [x] Implement Bluetooth Paired Devices Scanning/Sorting
+- [ ] Verify Wheel Data Acquisition (Pending User Feedback)
+- [ ] Implement Bluetooth Data Transmission (Write Logic needs verification)
 - [ ] Implement WiFi Data Transmission
 
 ## Known Issues
-- **Runtime Crash**: App crashes immediately on launch due to `NoClassDefFoundError: SDKManager`. Multidex and ProGuard fixes have not resolved this, pointing to defective Maven artifacts.
+- Deprecated Bluetooth API usage (writeCharacteristic, value setter) - works for target SDK but should be migrated to `writeCharacteristic(char, value, type)` for Android 13+ if needed.

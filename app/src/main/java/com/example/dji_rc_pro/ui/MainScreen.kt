@@ -27,6 +27,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import android.bluetooth.BluetoothProfile
 
+import androidx.compose.foundation.border
+
 @Composable
 fun VirtualButton(
     text: String, 
@@ -39,8 +41,9 @@ fun VirtualButton(
     
     Box(
         modifier = modifier
-            .size(60.dp)
-            .background(if (isPressed) Color.Green else Color.DarkGray, shape = MaterialTheme.shapes.small)
+            .size(45.dp)
+            .border(2.dp, Color.Black, MaterialTheme.shapes.small)
+            .background(if (isPressed) Color.LightGray else Color.White, shape = MaterialTheme.shapes.small)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
@@ -52,7 +55,7 @@ fun VirtualButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = Color.White)
+        Text(text, color = Color.Black)
     }
 }
 
@@ -71,6 +74,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val bleScanResults by viewModel.bleScanResults.collectAsState()
     val bleConnectionState by viewModel.bleConnectionState.collectAsState()
     val isBleScanning by viewModel.isBleScanning.collectAsState()
+    val toastMessage by viewModel.toastMessage.collectAsState()
     
     var showSettings by remember { mutableStateOf(false) }
     var showBleDialog by remember { mutableStateOf(false) }
@@ -174,22 +178,46 @@ fun MainScreen(viewModel: MainViewModel) {
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        items(bleScanResults) { result ->
+                        items(bleScanResults) { bleDevice ->
                             @SuppressLint("MissingPermission")
-                            val name = result.device.name ?: result.device.address
-                            val address = result.device.address
+                            val name = bleDevice.device.name ?: bleDevice.device.address
+                            val address = bleDevice.device.address
+                            val isPaired = bleDevice.isPaired
                             
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
-                                    .clickable { viewModel.connectBle(result) },
-                                colors = CardDefaults.cardColors(containerColor = Color.Gray)
+                                    .clickable { viewModel.connectBle(bleDevice) },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isPaired) Color(0xFF555555) else Color.Gray
+                                )
                             ) {
                                 Column(modifier = Modifier.padding(8.dp)) {
-                                    Text(text = name, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = name, 
+                                            color = Color.White, 
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isPaired) {
+                                            Text(
+                                                text = "PAIRED", 
+                                                color = Color.Green, 
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(start = 8.dp)
+                                            )
+                                        }
+                                    }
                                     Text(text = address, color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-                                    Text(text = "RSSI: ${result.rssi}", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                    if (bleDevice.rssi != 0) {
+                                        Text(text = "RSSI: ${bleDevice.rssi}", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                             }
                         }
@@ -199,12 +227,61 @@ fun MainScreen(viewModel: MainViewModel) {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(16.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(16.dp)
+        ) {
+        // Wheel Indicators
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Left Wheel
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Left Wheel: ${controllerState.leftWheel}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+                LinearProgressIndicator(
+                    progress = { controllerState.leftWheel / 255f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.Cyan,
+                    trackColor = Color.DarkGray
+                )
+            }
+            
+            // Right Wheel
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Right Wheel: ${controllerState.rightWheel}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+                LinearProgressIndicator(
+                    progress = { controllerState.rightWheel / 255f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.Cyan,
+                    trackColor = Color.DarkGray
+                )
+            }
+        }
+
+        // Debug Info
+        if (controllerState.debugInfo.isNotEmpty()) {
+            Text(
+                text = "Debug Axes: ${controllerState.debugInfo}",
+                color = Color.Yellow,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+
         // Status Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -266,12 +343,16 @@ fun MainScreen(viewModel: MainViewModel) {
         ) {
             // Left Stick
             Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(start = 24.dp, bottom = 24.dp),
+                contentAlignment = Alignment.BottomStart
             ) {
                 VirtualStick(
                     xValue = controllerState.leftStickX,
                     yValue = controllerState.leftStickY,
+                    size = 150.dp,
                     onStickMoved = { x, y -> viewModel.updateVirtualLeftStick(x, y) }
                 )
             }
@@ -293,24 +374,44 @@ fun MainScreen(viewModel: MainViewModel) {
                 // Virtual Buttons Overlay
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Shoulder Buttons
                     Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                         VirtualButton("L1", 4, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
                         VirtualButton("R1", 5, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
                     }
                     
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        VirtualButton("X", 2, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
-                        VirtualButton("Y", 3, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // D-Pad
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            VirtualButton("Up", 10, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                VirtualButton("Left", 12, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                                Spacer(modifier = Modifier.size(60.dp)) // Center of Dpad
+                                VirtualButton("Right", 13, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                            }
+                            VirtualButton("Down", 11, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                        }
+                        
+                        // ABXY
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            VirtualButton("Y", 3, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                VirtualButton("X", 2, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                                Spacer(modifier = Modifier.size(45.dp)) 
+                                VirtualButton("B", 1, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                            }
+                            VirtualButton("A", 0, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
+                        }
                     }
                     
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        VirtualButton("A", 0, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
-                        VirtualButton("B", 1, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Custom Buttons
+                    Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                         VirtualButton("C1", 6, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
                         VirtualButton("C2", 7, controllerState.buttonMask, { i, p -> viewModel.updateButtonState(i, p) })
                     }
@@ -319,15 +420,32 @@ fun MainScreen(viewModel: MainViewModel) {
 
             // Right Stick
             Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(end = 24.dp, bottom = 24.dp),
+                contentAlignment = Alignment.BottomEnd
             ) {
                 VirtualStick(
                     xValue = controllerState.rightStickX,
                     yValue = controllerState.rightStickY,
+                    size = 150.dp,
                     onStickMoved = { x, y -> viewModel.updateVirtualRightStick(x, y) }
                 )
             }
         }
     }
+
+    toastMessage?.let { message ->
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 64.dp)
+                .background(Color(0xCC000000), shape = MaterialTheme.shapes.medium)
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+        ) {
+            Text(message, color = Color.White)
+        }
+    }
+}
 }

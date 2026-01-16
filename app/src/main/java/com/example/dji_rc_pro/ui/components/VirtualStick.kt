@@ -24,6 +24,7 @@ fun VirtualStick(
     modifier: Modifier = Modifier,
     xValue: Int, // 0..255
     yValue: Int, // 0..255
+    size: androidx.compose.ui.unit.Dp = 200.dp,
     onStickMoved: (Float, Float) -> Unit
 ) {
     // Convert 0..255 to -1..1 for display
@@ -36,7 +37,6 @@ fun VirtualStick(
     var isDragging by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf(Offset.Zero) }
     
-    val size = 200.dp
     val sizePx = with(LocalDensity.current) { size.toPx() }
     val radius = sizePx / 2
     val knobRadius = sizePx / 6

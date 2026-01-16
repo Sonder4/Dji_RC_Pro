@@ -48,8 +48,24 @@ class BleManager private constructor(context: Context) {
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    private val _scanResults = MutableStateFlow<List<ScanResult>>(emptyList())
-    val scanResults: StateFlow<List<ScanResult>> = _scanResults.asStateFlow()
+    data class BleDevice(
+        val device: BluetoothDevice,
+        val rssi: Int = 0,
+        val isPaired: Boolean = false
+    ) {
+        // Equal/Hashcode based on address only for easy list management
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is BleDevice) return false
+            return device.address == other.device.address
+        }
+        override fun hashCode(): Int {
+            return device.address.hashCode()
+        }
+    }
+
+    private val _scanResults = MutableStateFlow<List<BleDevice>>(emptyList())
+    val scanResults: StateFlow<List<BleDevice>> = _scanResults.asStateFlow()
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
@@ -58,10 +74,25 @@ class BleManager private constructor(context: Context) {
                 val existingIndex = currentList.indexOfFirst { it.device.address == newResult.device.address }
                 
                 if (existingIndex >= 0) {
-                    currentList[existingIndex] = newResult
+                    // Update existing (keep paired status if true)
+                    val existing = currentList[existingIndex]
+                    currentList[existingIndex] = existing.copy(
+                        device = newResult.device, // Update device obj just in case name changed
+                        rssi = newResult.rssi
+                    )
                 } else {
-                    currentList.add(newResult)
+                    // Check if it's bonded in system (in case it wasn't caught in initial load)
+                    val isBonded = try {
+                        newResult.device.bondState == BluetoothDevice.BOND_BONDED
+                    } catch (e: SecurityException) {
+                        false
+                    }
+                    currentList.add(BleDevice(newResult.device, newResult.rssi, isBonded))
                 }
+                
+                // Sort: Paired first, then stronger signal
+                currentList.sortWith(compareByDescending<BleDevice> { it.isPaired }.thenByDescending { it.rssi })
+                
                 _scanResults.value = currentList
             }
         }
@@ -102,7 +133,17 @@ class BleManager private constructor(context: Context) {
 
     fun startScan() {
         if (bluetoothAdapter?.isEnabled == true && !_isScanning.value) {
-            _scanResults.value = emptyList()
+            // Load bonded devices first
+            val bondedDevices = try {
+                bluetoothAdapter?.bondedDevices?.map { 
+                    BleDevice(it, 0, true) 
+                } ?: emptyList()
+            } catch (e: SecurityException) {
+                emptyList()
+            }
+            
+            _scanResults.value = bondedDevices
+            
             bluetoothAdapter?.bluetoothLeScanner?.startScan(
                 null, // Filter can be added later
                 ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
