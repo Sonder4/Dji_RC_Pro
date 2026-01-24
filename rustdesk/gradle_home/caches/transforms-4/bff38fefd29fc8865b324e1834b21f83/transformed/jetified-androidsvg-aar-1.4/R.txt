@@ -1,0 +1,5 @@
+int attr css 0x7f040001
+int attr svg 0x7f040002
+int[] styleable SVGImageView { 0x7f040001, 0x7f040002 }
+int styleable SVGImageView_css 0
+int styleable SVGImageView_svg 1
