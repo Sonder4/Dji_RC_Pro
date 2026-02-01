@@ -1,0 +1,373 @@
+(TraeAI-4) E:\Desktop\app\DJI-Rcplus2-joy [0:0] $ adb shell dumpsys input
+INPUT MANAGER (dumpsys input)
+
+Input Manager State:
+  Interactive: true
+  System UI Visibility: 0x8708
+  Pointer Speed: 0
+  Pointer Gestures Enabled: true
+  Show Touches: false
+  Pointer Capture Enabled: false
+
+Event Hub State:
+  BuiltInKeyboardId: -2
+  Devices:
+    -1: Virtual
+      Classes: 0x40000023
+      Path: <virtual>
+      Enabled: true
+      Descriptor: a718a782d34bc767f4689c232d64d527998ea7fd
+      Location:
+      ControllerNumber: 0
+      UniqueId: <virtual>
+      Identifier: bus=0x0000, vendor=0x0000, product=0x0000, version=0x0000      
+      KeyLayoutFile: /system/usr/keylayout/Generic.kl
+      KeyCharacterMapFile: /system/usr/keychars/Virtual.kcm
+      ConfigurationFile:
+      HaveKeyboardLayoutOverlay: false
+      VideoDevice: <none>
+    1: DJI embedded joystick
+      Classes: 0x80000341
+      Path: /dev/input/event8
+      Enabled: true
+      Descriptor: afbd29ab1eff3cdc21d159c0ed7a80d510d8fc8f
+      Location: usb-xhci-hcd.0.auto-1.3/input0
+      ControllerNumber: 1
+      UniqueId:
+      Identifier: bus=0x0003, vendor=0x2ca3, product=0x1501, version=0x0100      
+      KeyLayoutFile: /system/usr/keylayout/Generic.kl
+      KeyCharacterMapFile: /system/usr/keychars/Generic.kcm
+      ConfigurationFile:
+      HaveKeyboardLayoutOverlay: false
+      VideoDevice: <none>
+    2: qpnp_pon
+      Classes: 0x00000001
+      Path: /dev/input/event0
+      Enabled: true
+      Descriptor: fb60d4f4370f5dbe8267b63d38dea852987571ab
+      Location: qpnp_pon/input0
+      ControllerNumber: 0
+      UniqueId:
+      Identifier: bus=0x0000, vendor=0x0000, product=0x0000, version=0x0000      
+      KeyLayoutFile: /system/usr/keylayout/Generic.kl
+      KeyCharacterMapFile: /system/usr/keychars/Generic.kcm
+      ConfigurationFile:
+      HaveKeyboardLayoutOverlay: false
+      VideoDevice: <none>
+    4: dummy_key
+      Classes: 0x00000001
+      Path: /dev/input/event2
+      Enabled: true
+      Descriptor: bd04bb7873467ffbfc3f2fd428db82e8c974e3b9
+      Location: dummy_key/input0
+      ControllerNumber: 0
+      UniqueId:
+      Identifier: bus=0x0019, vendor=0x0000, product=0x0000, version=0x0000      
+      KeyLayoutFile: /system/usr/keylayout/Generic.kl
+      KeyCharacterMapFile: /system/usr/keychars/Generic.kcm
+      ConfigurationFile:
+      HaveKeyboardLayoutOverlay: false
+      VideoDevice: <none>
+    5: dummy_key
+      Classes: 0x00000001
+      Path: /dev/input/event1
+      Enabled: true
+      Descriptor: 335324e2a70797a7a783f00613a93b85d909c5c2
+      Location: dummy_key/input0
+      ControllerNumber: 0
+      UniqueId:
+      Identifier: bus=0x0019, vendor=0x0000, product=0x0000, version=0x0000      
+      KeyLayoutFile: /system/usr/keylayout/Generic.kl
+      KeyCharacterMapFile: /system/usr/keychars/Generic.kcm
+      ConfigurationFile:
+      HaveKeyboardLayoutOverlay: false
+      VideoDevice: <none>
+    7: gpio-keys
+      Classes: 0x00000001
+      Path: /dev/input/event7
+      Enabled: true
+      Descriptor: 485d69228e24f5e46da1598745890b214130dbc4
+      Location: gpio-keys/input0
+      ControllerNumber: 0
+      UniqueId:
+      Identifier: bus=0x0019, vendor=0x0001, product=0x0001, version=0x0100      
+      KeyLayoutFile: /system/usr/keylayout/gpio-keys.kl
+      KeyCharacterMapFile: /system/usr/keychars/Generic.kcm
+      ConfigurationFile:
+      HaveKeyboardLayoutOverlay: false
+      VideoDevice: <none>
+    8: cyttsp5_mt
+      Classes: 0x00000015
+      Path: /dev/input/event3
+      Enabled: true
+      Descriptor: 5781ac714fdff02fa486373b6c76c35a83a011bb
+      Location: 0-0070/input0
+      ControllerNumber: 0
+      UniqueId:
+      Identifier: bus=0x0000, vendor=0x0000, product=0x0000, version=0x0000      
+      KeyLayoutFile: /system/usr/keylayout/Generic.kl
+      KeyCharacterMapFile: /system/usr/keychars/Generic.kcm
+      ConfigurationFile:
+      HaveKeyboardLayoutOverlay: false
+      VideoDevice: <none>
+  Unattached video devices:
+    <none>
+
+Input Reader State:
+  Device -1: Virtual
+    Generation: 2
+    IsExternal: false
+    AssociatedDisplayPort: <none>
+    HasMic:     false
+    Sources: 0x00000301
+    KeyboardType: 2
+    Keyboard Input Mapper:
+      Parameters:
+        OrientationAware: false
+        HandlesKeyRepeat: false
+      KeyboardType: 2
+      Orientation: 0
+      KeyDowns: 0 keys currently down
+      MetaState: 0x0
+      DownTime: 0
+  Device 1: DJI embedded joystick
+    Generation: 14
+    IsExternal: true
+    AssociatedDisplayPort: <none>
+    HasMic:     false
+    Sources: 0x01000511
+    KeyboardType: 1
+    Motion Ranges:
+      X: source=0x01000010, min=-1.000, max=1.000, flat=0.004, fuzz=0.000, resolution=0.000
+      Y: source=0x01000010, min=-1.000, max=1.000, flat=0.004, fuzz=0.000, resolution=0.000
+      Z: source=0x01000010, min=-1.000, max=1.000, flat=0.000, fuzz=0.000, resolution=0.000
+      RX: source=0x01000010, min=-1.000, max=1.000, flat=0.004, fuzz=0.000, resolution=0.000
+      RY: source=0x01000010, min=-1.000, max=1.000, flat=0.004, fuzz=0.000, resolution=0.000
+      RZ: source=0x01000010, min=-1.000, max=1.000, flat=0.000, fuzz=0.000, resolution=0.000
+      HAT_X: source=0x01000010, min=-1.000, max=1.000, flat=0.000, fuzz=0.000, resolution=0.000
+      HAT_Y: source=0x01000010, min=-1.000, max=1.000, flat=0.000, fuzz=0.000, resolution=0.000
+    Vibrator Input Mapper:
+      Vibrating: false
+    Keyboard Input Mapper:
+      Parameters:
+        OrientationAware: false
+        HandlesKeyRepeat: false
+      KeyboardType: 1
+      Orientation: 0
+      KeyDowns: 0 keys currently down
+      MetaState: 0x0
+      DownTime: 11936148295000
+    Joystick Input Mapper:
+      Axes:
+        X: min=-1.00000, max=1.00000, flat=0.00391, fuzz=0.00049, resolution=0.00000
+          scale=0.00003, offset=0.00002, highScale=0.00003, highOffset=0.00002   
+          rawAxis=0, rawMin=-32768, rawMax=32767, rawFlat=128, rawFuzz=16, rawResolution=0
+        Y: min=-1.00000, max=1.00000, flat=0.00391, fuzz=0.00049, resolution=0.00000
+          scale=0.00003, offset=0.00002, highScale=0.00003, highOffset=0.00002   
+          rawAxis=1, rawMin=-32768, rawMax=32767, rawFlat=128, rawFuzz=16, rawResolution=0
+        Z: min=-1.00000, max=1.00000, flat=0.00000, fuzz=0.00000, resolution=0.00000
+          scale=0.00784, offset=-1.00000, highScale=0.00784, highOffset=-1.00000 
+          rawAxis=2, rawMin=0, rawMax=255, rawFlat=0, rawFuzz=0, rawResolution=0 
+        RX: min=-1.00000, max=1.00000, flat=0.00391, fuzz=0.00049, resolution=0.00000
+          scale=0.00003, offset=0.00002, highScale=0.00003, highOffset=0.00002   
+          rawAxis=3, rawMin=-32768, rawMax=32767, rawFlat=128, rawFuzz=16, rawResolution=0
+        RY: min=-1.00000, max=1.00000, flat=0.00391, fuzz=0.00049, resolution=0.00000
+          scale=0.00003, offset=0.00002, highScale=0.00003, highOffset=0.00002   
+          rawAxis=4, rawMin=-32768, rawMax=32767, rawFlat=128, rawFuzz=16, rawResolution=0
+        RZ: min=-1.00000, max=1.00000, flat=0.00000, fuzz=0.00000, resolution=0.00000
+          scale=0.00784, offset=-1.00000, highScale=0.00784, highOffset=-1.00000 
+          rawAxis=5, rawMin=0, rawMax=255, rawFlat=0, rawFuzz=0, rawResolution=0 
+        HAT_X: min=-1.00000, max=1.00000, flat=0.00000, fuzz=0.00000, resolution=0.00000
+          scale=1.00000, offset=-0.00000, highScale=1.00000, highOffset=-0.00000 
+          rawAxis=16, rawMin=-1, rawMax=1, rawFlat=0, rawFuzz=0, rawResolution=0 
+        HAT_Y: min=-1.00000, max=1.00000, flat=0.00000, fuzz=0.00000, resolution=0.00000
+          scale=1.00000, offset=-0.00000, highScale=1.00000, highOffset=-0.00000 
+          rawAxis=17, rawMin=-1, rawMax=1, rawFlat=0, rawFuzz=0, rawResolution=0 
+  Device 2: qpnp_pon
+    Generation: 12
+    IsExternal: false
+    AssociatedDisplayPort: <none>
+    HasMic:     false
+    Sources: 0x00000101
+    KeyboardType: 1
+    Keyboard Input Mapper:
+      Parameters:
+        OrientationAware: false
+        HandlesKeyRepeat: false
+      KeyboardType: 1
+      Orientation: 0
+      KeyDowns: 0 keys currently down
+      MetaState: 0x0
+      DownTime: 18250802126000
+  Device 4: dummy_key
+    Generation: 10
+    IsExternal: false
+    AssociatedDisplayPort: <none>
+    HasMic:     false
+    Sources: 0x00000101
+    KeyboardType: 1
+    Keyboard Input Mapper:
+      Parameters:
+        OrientationAware: false
+        HandlesKeyRepeat: false
+      KeyboardType: 1
+      Orientation: 0
+      KeyDowns: 0 keys currently down
+      MetaState: 0x0
+      DownTime: 16457772940000
+  Device 5: dummy_key
+    Generation: 8
+    IsExternal: false
+    AssociatedDisplayPort: <none>
+    HasMic:     false
+    Sources: 0x00000101
+    KeyboardType: 1
+    Keyboard Input Mapper:
+      Parameters:
+        OrientationAware: false
+        HandlesKeyRepeat: false
+      KeyboardType: 1
+      Orientation: 0
+      KeyDowns: 0 keys currently down
+      MetaState: 0x0
+      DownTime: 0
+  Device 7: gpio-keys
+    Generation: 6
+    IsExternal: false
+    AssociatedDisplayPort: <none>
+    HasMic:     false
+    Sources: 0x00000101
+    KeyboardType: 1
+    Keyboard Input Mapper:
+      Parameters:
+        OrientationAware: false
+        HandlesKeyRepeat: false
+      KeyboardType: 1
+      Orientation: 0
+      KeyDowns: 0 keys currently down
+      MetaState: 0x0
+      DownTime: 0
+  Device 8: cyttsp5_mt
+    Generation: 18
+    IsExternal: false
+    AssociatedDisplayPort: <none>
+    HasMic:     false
+    Sources: 0x00005103
+    KeyboardType: 1
+    Motion Ranges:
+      X: source=0x00005002, min=0.000, max=1919.000, flat=0.000, fuzz=0.000, resolution=0.000
+      Y: source=0x00005002, min=0.000, max=1079.000, flat=0.000, fuzz=0.000, resolution=0.000
+      PRESSURE: source=0x00005002, min=0.000, max=1.000, flat=0.000, fuzz=0.000, resolution=0.000
+      SIZE: source=0x00005002, min=0.000, max=1.000, flat=0.000, fuzz=0.000, resolution=0.000
+      TOUCH_MAJOR: source=0x00005002, min=0.000, max=2202.907, flat=0.000, fuzz=0.000, resolution=0.000
+      TOUCH_MINOR: source=0x00005002, min=0.000, max=2202.907, flat=0.000, fuzz=0.000, resolution=0.000
+      TOOL_MAJOR: source=0x00005002, min=0.000, max=2202.907, flat=0.000, fuzz=0.000, resolution=0.000
+      TOOL_MINOR: source=0x00005002, min=0.000, max=2202.907, flat=0.000, fuzz=0.000, resolution=0.000
+      ORIENTATION: source=0x00005002, min=-1.571, max=1.571, flat=0.000, fuzz=0.000, resolution=0.000
+    Keyboard Input Mapper:
+      Parameters:
+        OrientationAware: false
+        HandlesKeyRepeat: false
+      KeyboardType: 1
+      Orientation: 0
+      KeyDowns: 0 keys currently down
+      MetaState: 0x0
+      DownTime: 0
+    Touch Input Mapper (mode - direct):
+      Parameters:
+        GestureMode: multi-touch
+        DeviceType: touchScreen
+        AssociatedDisplay: hasAssociatedDisplay=true, isExternal=false, displayId=''
+        OrientationAware: true
+      Virtual Keys:
+        0: scanCode=158, keyCode=4, hitLeft=1280, hitRight=1440, hitTop=0, hitBottom=180
+        1: scanCode=139, keyCode=82, hitLeft=1280, hitRight=1440, hitTop=180, hitBottom=360
+        2: scanCode=172, keyCode=3, hitLeft=1280, hitRight=1440, hitTop=360, hitBottom=540
+        3: scanCode=217, keyCode=84, hitLeft=1280, hitRight=1440, hitTop=540, hitBottom=720
+      Raw Touch Axes:
+        X: min=0, max=1079, flat=0, fuzz=0, resolution=0
+        Y: min=0, max=1919, flat=0, fuzz=0, resolution=0
+        Pressure: min=0, max=255, flat=0, fuzz=0, resolution=0
+        TouchMajor: min=0, max=255, flat=0, fuzz=0, resolution=0
+        TouchMinor: min=0, max=255, flat=0, fuzz=0, resolution=0
+        ToolMajor: unknown range
+        ToolMinor: unknown range
+        Orientation: min=-127, max=127, flat=0, fuzz=0, resolution=0
+        Distance: unknown range
+        TiltX: unknown range
+        TiltY: unknown range
+        TrackingId: min=0, max=65535, flat=0, fuzz=0, resolution=0
+        Slot: min=0, max=31, flat=0, fuzz=0, resolution=0
+      Calibration:
+        touch.size.calibration: geometric
+        touch.pressure.calibration: physical
+        touch.orientation.calibration: interpolated
+        touch.distance.calibration: none
+        touch.coverage.calibration: none
+      Affine Transformation:
+        X scale: 1.000
+        X ymix: 0.000
+        X offset: 0.000
+        Y xmix: 0.000
+        Y scale: 1.000
+        Y offset: 0.000
+      Viewport INTERNAL: displayId=0, uniqueId=local:19261125508703617, port=129, orientation=1, logicalFrame=[0, 0, 1920, 1080], physicalFrame=[0, 0, 1920, 1080], deviceSize=[1920, 1080]
+      SurfaceWidth: 1080px
+      SurfaceHeight: 1920px
+      SurfaceLeft: 0
+      SurfaceTop: 0
+      PhysicalWidth: 1080px
+      PhysicalHeight: 1920px
+      PhysicalLeft: 0
+      PhysicalTop: 0
+      SurfaceOrientation: 1
+      Translation and Scaling Factors:
+        XTranslate: 0.000
+        YTranslate: 0.000
+        XScale: 1.000
+        YScale: 1.000
+        XPrecision: 1.000
+        YPrecision: 1.000
+        GeometricScale: 1.000
+        PressureScale: 0.004
+        SizeScale: 0.004
+        OrientationScale: 0.012
+        DistanceScale: 0.000
+        HaveTilt: false
+        TiltXCenter: 0.000
+        TiltXScale: 0.000
+        TiltYCenter: 0.000
+        TiltYScale: 0.000
+      Last Raw Button State: 0x00000000
+      Last Raw Touch: pointerCount=0
+      Last Cooked Button State: 0x00000000
+      Last Cooked Touch: pointerCount=0
+      Stylus Fusion:
+        ExternalStylusConnected: false
+        External Stylus ID: -1
+        External Stylus Data Timeout: 9223372036854775807
+      External Stylus State:
+        When: 9223372036854775807
+        Pressure: 0.000000
+        Button State: 0x00000000
+        Tool Type: 0
+  Configuration:
+    ExcludedDeviceNames: [qti-haptics]
+    VirtualKeyQuietTime: 0.0ms
+    PointerVelocityControlParameters: scale=1.000, lowThreshold=500.000, highThreshold=3000.000, acceleration=3.000
+    WheelVelocityControlParameters: scale=1.000, lowThreshold=15.000, highThreshold=50.000, acceleration=4.000
+    PointerGesture:
+      Enabled: true
+      QuietInterval: 100.0ms
+      DragMinSwitchSpeed: 50.0px/s
+      TapInterval: 150.0ms
+      TapDragInterval: 300.0ms
+      TapSlop: 20.0px
+      MultitouchSettleInterval: 100.0ms
+      MultitouchMinDistance: 15.0px
+      SwipeTransitionAngleCosine: 0.3
+      SwipeMaxWidthRatio: 0.2
+      MovementSpeedRatio: 0.8
+      ZoomSpeedRatio: 0.3
+      Viewports:
+        Viewport INTERNAL: displayId=0, uniqueId=local:19261125508703617, port=129, orientation=1, logicalFrame=[0, 0, 1920, 1080], physicalFrame=[0, 0, 1920, 1080], deviceSize=[1920, 1080]
