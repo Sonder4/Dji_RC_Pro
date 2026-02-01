@@ -3,7 +3,7 @@ package com.example.dji_rc_pro.domain.input
 import kotlin.math.roundToInt
 
 /**
- * Transforms MSDK float inputs (-1.0 to 1.0) into Byte range (0 to 255).
+ * Transforms float inputs (-1.0 to 1.0) into Byte range (0 to 255).
  */
 object StickTransformer {
     private const val MIN_OUT = 0

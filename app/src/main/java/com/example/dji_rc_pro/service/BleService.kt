@@ -1,73 +1,52 @@
 package com.example.dji_rc_pro.service
 
-import android.app.Service
 import android.bluetooth.BluetoothProfile
-import android.content.Intent
-import android.os.IBinder
-import android.util.Log
 import com.example.dji_rc_pro.domain.ble.BleManager
-import com.example.dji_rc_pro.domain.msdk.MsdkManager
-import com.example.dji_rc_pro.protocol.ControlPacket
-import kotlinx.coroutines.*
+import timber.log.Timber
 
-class BleService : Service() {
-    private val serviceJob = Job()
-    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
-    
+/**
+ * BLE transmission service for sending control packets via Bluetooth Low Energy
+ */
+class BleService : BaseTransmissionService() {
+
+    override val startAction: String = ACTION_START
+    override val stopAction: String = ACTION_STOP
+    override val transmissionFrequencyHz: Int = DEFAULT_FREQUENCY_HZ
+    override val serviceTag: String = TAG
+
     companion object {
         private const val TAG = "BleService"
         const val ACTION_START = "START_BLE"
         const val ACTION_STOP = "STOP_BLE"
+        private const val DEFAULT_FREQUENCY_HZ = 50
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override suspend fun transmitPacket() {
+        val bleManager = BleManager.getInstance(applicationContext)
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START -> startTransmission()
-            ACTION_STOP -> stopTransmission()
-        }
-        return START_STICKY
-    }
-
-    private fun startTransmission() {
-        Log.i(TAG, "Starting BLE Transmission Service")
-        
-        // Ensure scope is active (if restarted)
-        serviceScope.launch {
-            val bleManager = BleManager.getInstance(applicationContext)
-            
-            while (isActive) {
-                if (bleManager.connectionState.value == BluetoothProfile.STATE_CONNECTED) {
-                    val packetData = createPacket()
-                    bleManager.write(packetData)
-                }
-                
-                // 50Hz = 20ms
-                delay(20)
-            }
+        if (bleManager.connectionState.value == BluetoothProfile.STATE_CONNECTED) {
+            val packetData = createControlPacket()
+            bleManager.write(packetData)
         }
     }
 
-    private fun createPacket(): ByteArray {
-        val state = MsdkManager.instance.controllerState.value
-        return ControlPacket(
-            leftStickX = state.leftStickX,
-            leftStickY = state.leftStickY,
-            rightStickX = state.rightStickX,
-            rightStickY = state.rightStickY,
-            buttonMask = state.buttonMask
-        ).toByteArray()
+    override fun logInfo(message: String) {
+        Timber.i("[$TAG] $message")
     }
 
-    private fun stopTransmission() {
-        Log.i(TAG, "Stopping BLE Transmission Service")
-        serviceJob.cancelChildren()
-        stopSelf()
+    override fun logDebug(message: String) {
+        Timber.d("[$TAG] $message")
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        serviceJob.cancel()
+    override fun logWarning(message: String) {
+        Timber.w("[$TAG] $message")
+    }
+
+    override fun logError(message: String, throwable: Throwable?) {
+        if (throwable != null) {
+            Timber.e(throwable, "[$TAG] $message")
+        } else {
+            Timber.e("[$TAG] $message")
+        }
     }
 }

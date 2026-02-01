@@ -26,3 +26,18 @@ def send_test_packets(target_ip, target_port, count=5, interval=1.0):
             print(f"Packet {i+1}/{count} sent")
             if i < count - 1:
                 time.sleep(interval)
+        
+        print("-" * 50)
+        print(f"All {count} packets sent successfully!")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        sock.close()
+
+if __name__ == "__main__":
+    # DJI RC Pro 的IP和端口
+    TARGET_IP = "192.168.1.86"    # 设备IP
+    TARGET_PORT = 1346             # 设备监听端口
+    
+    send_test_packets(TARGET_IP, TARGET_PORT, count=5, interval=0.5)

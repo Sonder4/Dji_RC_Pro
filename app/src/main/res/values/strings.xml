@@ -1,3 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Dji_RC_Pro</string>
+
+    <!-- Connection Status -->
+    <string name="connection_status">Connection Status</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_reconnecting">Reconnecting…</string>
+    <string name="status_error">Error</string>
+    <string name="status_partial">Partial</string>
+
+    <!-- Transport Status -->
+    <string name="udp_status">UDP</string>
+    <string name="ble_status">BLE</string>
+    <string name="transport_connected">%1$s Connected</string>
+    <string name="transport_disconnected">%1$s Disconnected</string>
+    <string name="transport_connecting">%1$s Connecting…</string>
+
+    <!-- Statistics -->
+    <string name="statistics">Statistics</string>
+    <string name="packets_sent">Packets Sent</string>
+    <string name="packets_received">Packets Received</string>
+    <string name="bytes_sent">Bytes Sent</string>
+    <string name="bytes_received">Bytes Received</string>
+    <string name="connection_uptime">Uptime</string>
+    <string name="error_count">Errors</string>
+
+    <!-- Frequency Settings -->
+    <string name="frequency_settings">Frequency Settings</string>
+    <string name="data_frequency">Data Frequency</string>
+    <string name="frequency_hz">%1$d Hz</string>
+    <string name="frequency_range">Range: 10 - 200 Hz</string>
+    <string name="frequency_default">Default: 100 Hz</string>
+    <string name="apply_frequency">Apply</string>
+    <string name="reset_frequency">Reset</string>
+
+    <!-- Error Dialog -->
+    <string name="error_occurred">Error Occurred</string>
+    <string name="error_details">Error Details</string>
+    <string name="error_code">Error Code</string>
+    <string name="error_category">Category</string>
+    <string name="error_severity">Severity</string>
+    <string name="error_message">Message</string>
+    <string name="error_retry">Retry</string>
+    <string name="error_dismiss">Dismiss</string>
+    <string name="error_report">Report Error</string>
+
+    <!-- Severity Levels -->
+    <string name="severity_low">Low</string>
+    <string name="severity_medium">Medium</string>
+    <string name="severity_high">High</string>
+    <string name="severity_critical">Critical</string>
+
+    <!-- Heartbeat -->
+    <string name="heartbeat_status">Heartbeat</string>
+    <string name="heartbeat_healthy">Healthy</string>
+    <string name="heartbeat_warning">Warning</string>
+    <string name="heartbeat_timeout">Timeout</string>
+    <string name="heartbeat_missed">Missed: %1$d</string>
+
+    <!-- Reconnection -->
+    <string name="reconnecting">Reconnecting…</string>
+    <string name="reconnect_attempt">Attempt %1$d of %2$d</string>
+    <string name="reconnect_wait">Waiting %1$s…</string>
+
+    <!-- Logs -->
+    <string name="logs">Logs</string>
+    <string name="export_logs">Export Logs</string>
+    <string name="view_logs">View Logs</string>
+    <string name="clear_logs">Clear Logs</string>
+    <string name="log_exported">Logs exported successfully</string>
+    <string name="log_export_failed">Failed to export logs</string>
+
+    <!-- Crash Report -->
+    <string name="crash_report">Crash Report</string>
+    <string name="crash_occurred">App has crashed</string>
+    <string name="share_crash_report">Share Crash Report</string>
+    <string name="crash_exported">Crash report exported</string>
+
+    <!-- Actions -->
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="scan">Scan</string>
+    <string name="stop">Stop</string>
+    <string name="settings">Settings</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+
+    <!-- Notifications -->
+    <string name="notification_connection_lost">Connection Lost</string>
+    <string name="notification_connection_restored">Connection Restored</string>
+    <string name="notification_retry_in">Retrying in %1$s</string>
+
+    <!-- General -->
+    <string name="loading">Loading…</string>
+    <string name="unknown">Unknown</string>
+    <string name="none">None</string>
+    <string name="enabled">Enabled</string>
+    <string name="disabled">Disabled</string>
 </resources>

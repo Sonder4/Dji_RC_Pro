@@ -189,6 +189,9 @@ class UsbHidManager(private val context: Context) {
         close()
         try {
             context.unregisterReceiver(usbReceiver)
-        } catch (e: Exception) {}
+        } catch (e: IllegalArgumentException) {
+            // Receiver was not registered or already unregistered
+            Log.d(TAG, "Receiver was not registered")
+        }
     }
 }

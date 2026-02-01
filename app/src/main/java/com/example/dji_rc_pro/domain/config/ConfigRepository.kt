@@ -30,14 +30,19 @@ class ConfigRepository private constructor(context: Context) {
         
         private val KEY_TARGET_IP = stringPreferencesKey("target_ip")
         private val KEY_TARGET_PORT = intPreferencesKey("target_port")
+        private val KEY_LOCAL_PORT = intPreferencesKey("local_port")
     }
 
     val targetIp: Flow<String> = dataStore.data.map { prefs ->
-        prefs[KEY_TARGET_IP] ?: "192.168.1.100"
+        prefs[KEY_TARGET_IP] ?: "192.168.1.83"
     }
 
     val targetPort: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[KEY_TARGET_PORT] ?: 8888
+        prefs[KEY_TARGET_PORT] ?: 1387
+    }
+
+    val localPort: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[KEY_LOCAL_PORT] ?: 1346
     }
 
     suspend fun setTargetIp(ip: String) {
@@ -49,6 +54,12 @@ class ConfigRepository private constructor(context: Context) {
     suspend fun setTargetPort(port: Int) {
         dataStore.edit { prefs ->
             prefs[KEY_TARGET_PORT] = port
+        }
+    }
+
+    suspend fun setLocalPort(port: Int) {
+        dataStore.edit { prefs ->
+            prefs[KEY_LOCAL_PORT] = port
         }
     }
 }

@@ -53,3 +53,15 @@ For **every** user request, you MUST strictly follow this sequence:
 ## 3. Vibe Coding Specifics
 *   **Memory**: If you encounter a compilation error, record it in `Docs/ERROR_LOG.md`.
 *   **Context**: Maintain the integrity of `Project_Context.md`. It is your long-term memory.
+
+## 4. RustDesk Integration Workflow
+*   **Source of Truth**: 
+    *   Source code: `rustdesk/flutter` (Dart/Flutter).
+    *   Binary: `app/libs/dji-rustdesk.aar` (Compiled artifact).
+    *   Design: `docs/02_Architecture/DESIGN_RustDesk_Integration.md`.
+*   **Modification Rule**: 
+    *   Do NOT modify `rustdesk` source directly in the Android view. Always use `flutter build aar` and sync.
+    *   Keep modifications to RustDesk source minimal and documented.
+*   **Communication**: 
+    *   Use `MethodChannel("com.dji.rcpro/rustdesk")`.
+    *   Adhere to the protocol defined in the Design doc.

@@ -65,12 +65,12 @@ enum class OverallConnectionState {
     RECONNECTING
 }
 
-class HeartbeatState(
-    var isActive: Boolean = false,
-    var lastSentTime: Long = 0L,
-    var lastReceivedTime: Long = 0L,
-    var missedCount: Int = 0,
-    var timeoutCount: Int = 0,
+data class HeartbeatState(
+    val isActive: Boolean = false,
+    val lastSentTime: Long = 0L,
+    val lastReceivedTime: Long = 0L,
+    val missedCount: Int = 0,
+    val timeoutCount: Int = 0,
     val intervalMs: Long = 1000L,
     val maxMissed: Int = 3
 ) {
@@ -80,63 +80,39 @@ class HeartbeatState(
     val isTimedOut: Boolean
         get() = System.currentTimeMillis() - lastReceivedTime > intervalMs * maxMissed
 
-    fun markHeartbeatSent() {
-        lastSentTime = System.currentTimeMillis()
-    }
+    fun markHeartbeatSent(): HeartbeatState =
+        copy(lastSentTime = System.currentTimeMillis())
 
-    fun markHeartbeatReceived() {
-        lastReceivedTime = System.currentTimeMillis()
-        missedCount = 0
-    }
+    fun markHeartbeatReceived(): HeartbeatState =
+        copy(lastReceivedTime = System.currentTimeMillis(), missedCount = 0)
 
-    fun incrementMissed() {
-        missedCount++
-    }
+    fun incrementMissed(): HeartbeatState =
+        copy(missedCount = missedCount + 1)
 
-    fun incrementTimeout() {
-        timeoutCount++
-    }
+    fun incrementTimeout(): HeartbeatState =
+        copy(timeoutCount = timeoutCount + 1)
 
-    fun reset() {
-        isActive = false
-        missedCount = 0
-        timeoutCount = 0
-        lastSentTime = 0L
-        lastReceivedTime = 0L
-    }
-
-    fun copy(
-        isActive: Boolean = this.isActive,
-        lastSentTime: Long = this.lastSentTime,
-        lastReceivedTime: Long = this.lastReceivedTime,
-        missedCount: Int = this.missedCount,
-        timeoutCount: Int = this.timeoutCount,
-        intervalMs: Long = this.intervalMs,
-        maxMissed: Int = this.maxMissed
-    ): HeartbeatState {
-        return HeartbeatState(
-            isActive = isActive,
-            lastSentTime = lastSentTime,
-            lastReceivedTime = lastReceivedTime,
-            missedCount = missedCount,
-            timeoutCount = timeoutCount,
-            intervalMs = intervalMs,
-            maxMissed = maxMissed
+    fun reset(): HeartbeatState =
+        copy(
+            isActive = false,
+            missedCount = 0,
+            timeoutCount = 0,
+            lastSentTime = 0L,
+            lastReceivedTime = 0L
         )
-    }
 }
 
-class ReconnectState(
-    var isReconnecting: Boolean = false,
-    var attemptCount: Int = 0,
+data class ReconnectState(
+    val isReconnecting: Boolean = false,
+    val attemptCount: Int = 0,
     val maxAttempts: Int = 10,
     val baseDelayMs: Long = 1000L,
     val maxDelayMs: Long = 30000L,
     val exponentialBase: Double = 2.0,
-    var lastAttemptTime: Long = 0L,
-    var nextRetryTime: Long = 0L,
-    var successCount: Int = 0,
-    var failureCount: Int = 0
+    val lastAttemptTime: Long = 0L,
+    val nextRetryTime: Long = 0L,
+    val successCount: Int = 0,
+    val failureCount: Int = 0
 ) {
     val shouldRetry: Boolean
         get() = isReconnecting && attemptCount < maxAttempts && System.currentTimeMillis() >= nextRetryTime
@@ -147,104 +123,84 @@ class ReconnectState(
             return delay.coerceIn(baseDelayMs, maxDelayMs)
         }
 
-    fun startReconnect() {
-        isReconnecting = true
-        attemptCount = 0
-        lastAttemptTime = 0L
-        nextRetryTime = System.currentTimeMillis()
-    }
+    fun startReconnect(): ReconnectState =
+        copy(
+            isReconnecting = true,
+            attemptCount = 0,
+            lastAttemptTime = 0L,
+            nextRetryTime = System.currentTimeMillis()
+        )
 
-    fun recordAttempt(): Long {
-        attemptCount++
-        lastAttemptTime = System.currentTimeMillis()
-        nextRetryTime = lastAttemptTime + currentDelayMs
-        return currentDelayMs
-    }
-
-    fun recordSuccess() {
-        successCount++
-        isReconnecting = false
-        attemptCount = 0
-    }
-
-    fun recordFailure() {
-        failureCount++
-    }
-
-    fun stopReconnect() {
-        isReconnecting = false
-        attemptCount = 0
-    }
-
-    fun shouldGiveUp(): Boolean {
-        return attemptCount >= maxAttempts
-    }
-
-    fun copy(
-        isReconnecting: Boolean = this.isReconnecting,
-        attemptCount: Int = this.attemptCount,
-        lastAttemptTime: Long = this.lastAttemptTime,
-        nextRetryTime: Long = this.nextRetryTime,
-        successCount: Int = this.successCount,
-        failureCount: Int = this.failureCount,
-        maxAttempts: Int = this.maxAttempts,
-        baseDelayMs: Long = this.baseDelayMs,
-        maxDelayMs: Long = this.maxDelayMs,
-        exponentialBase: Double = this.exponentialBase
-    ): ReconnectState {
-        return ReconnectState(
-            isReconnecting = isReconnecting,
-            attemptCount = attemptCount,
-            maxAttempts = maxAttempts,
-            baseDelayMs = baseDelayMs,
-            maxDelayMs = maxDelayMs,
-            exponentialBase = exponentialBase,
-            lastAttemptTime = lastAttemptTime,
-            nextRetryTime = nextRetryTime,
-            successCount = successCount,
-            failureCount = failureCount
+    fun recordAttempt(): ReconnectState {
+        val newAttemptCount = attemptCount + 1
+        val newLastAttemptTime = System.currentTimeMillis()
+        val newNextRetryTime = newLastAttemptTime + currentDelayMs
+        return copy(
+            attemptCount = newAttemptCount,
+            lastAttemptTime = newLastAttemptTime,
+            nextRetryTime = newNextRetryTime
         )
     }
+
+    fun recordSuccess(): ReconnectState =
+        copy(
+            successCount = successCount + 1,
+            isReconnecting = false,
+            attemptCount = 0
+        )
+
+    fun recordFailure(): ReconnectState =
+        copy(failureCount = failureCount + 1)
+
+    fun stopReconnect(): ReconnectState =
+        copy(
+            isReconnecting = false,
+            attemptCount = 0
+        )
+
+    fun shouldGiveUp(): Boolean = attemptCount >= maxAttempts
 }
 
-class ProtocolStats(
-    var totalPackets: Long = 0L,
-    var validPackets: Long = 0L,
-    var invalidPackets: Long = 0L,
-    var corruptedPackets: Long = 0L,
-    var lastPacketTime: Long = 0L,
-    var avgLatencyMs: Double = 0.0,
-    var maxLatencyMs: Long = 0L,
-    var minLatencyMs: Long = Long.MAX_VALUE
+data class ProtocolStats(
+    val totalPackets: Long = 0L,
+    val validPackets: Long = 0L,
+    val invalidPackets: Long = 0L,
+    val corruptedPackets: Long = 0L,
+    val lastPacketTime: Long = 0L,
+    val avgLatencyMs: Double = 0.0,
+    val maxLatencyMs: Long = 0L,
+    val minLatencyMs: Long = Long.MAX_VALUE
 ) {
     val validRate: Float
         get() = if (totalPackets > 0) validPackets.toFloat() / totalPackets else 0f
 
-    fun recordPacket(isValid: Boolean, latencyMs: Long) {
-        totalPackets++
-        lastPacketTime = System.currentTimeMillis()
+    fun recordPacket(isValid: Boolean, latencyMs: Long): ProtocolStats {
+        val newTotalPackets = totalPackets + 1
+        val newLastPacketTime = System.currentTimeMillis()
 
-        if (isValid) {
-            validPackets++
-            avgLatencyMs = (avgLatencyMs * (validPackets - 1) + latencyMs) / validPackets
-            maxLatencyMs = maxOf(maxLatencyMs, latencyMs)
-            minLatencyMs = minOf(minLatencyMs, latencyMs)
+        return if (isValid) {
+            val newValidPackets = validPackets + 1
+            val newAvgLatencyMs = (avgLatencyMs * validPackets + latencyMs) / newValidPackets
+            copy(
+                totalPackets = newTotalPackets,
+                validPackets = newValidPackets,
+                lastPacketTime = newLastPacketTime,
+                avgLatencyMs = newAvgLatencyMs,
+                maxLatencyMs = maxOf(maxLatencyMs, latencyMs),
+                minLatencyMs = minOf(minLatencyMs, latencyMs)
+            )
         } else {
-            invalidPackets++
+            copy(
+                totalPackets = newTotalPackets,
+                invalidPackets = invalidPackets + 1,
+                lastPacketTime = newLastPacketTime
+            )
         }
     }
 
-    fun recordCorrupted() {
-        corruptedPackets++
-    }
+    fun recordCorrupted(): ProtocolStats =
+        copy(corruptedPackets = corruptedPackets + 1)
 
-    fun reset() {
-        totalPackets = 0
-        validPackets = 0
-        invalidPackets = 0
-        corruptedPackets = 0
-        avgLatencyMs = 0.0
-        maxLatencyMs = 0
-        minLatencyMs = Long.MAX_VALUE
-    }
+    fun reset(): ProtocolStats =
+        ProtocolStats()
 }

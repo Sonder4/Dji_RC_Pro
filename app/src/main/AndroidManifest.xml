@@ -32,10 +32,6 @@
         android:theme="@style/Theme.Dji_RC_Pro"
         tools:targetApi="31">
 
-        <meta-data
-            android:name="com.dji.sdk.API_KEY"
-            android:value="d4c36b38844cab1a267ef684" />
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -52,6 +48,16 @@
         
         <service android:name=".service.UdpService" />
         <service android:name=".service.BleService" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

@@ -47,7 +47,7 @@ class ReconnectManager {
             return
         }
 
-        _reconnectState.value.startReconnect()
+        _reconnectState.value = _reconnectState.value.startReconnect()
 
         scope.launch {
             _reconnectEvents.emit(ReconnectEvent.Started(transport, errorCode))
@@ -63,7 +63,7 @@ class ReconnectManager {
                 }
 
                 attempt++
-                _reconnectState.value.recordAttempt()
+                _reconnectState.value = _reconnectState.value.recordAttempt()
 
                 val delayMs = _reconnectState.value.currentDelayMs
                 LogUtil.d("ReconnectManager: Attempt $attempt for $transport (delay: ${delayMs}ms)")
@@ -85,7 +85,7 @@ class ReconnectManager {
 
                 if (success) {
                     LogUtil.d("ReconnectManager: Reconnection successful for $transport on attempt $attempt")
-                    _reconnectState.value.recordSuccess()
+                    _reconnectState.value = _reconnectState.value.recordSuccess()
 
                     onReconnectSuccess?.invoke(transport)
 
@@ -117,7 +117,7 @@ class ReconnectManager {
     fun stopReconnect() {
         reconnectJob?.cancel()
         reconnectJob = null
-        _reconnectState.value.stopReconnect()
+        _reconnectState.value = _reconnectState.value.stopReconnect()
         LogUtil.d("ReconnectManager: Reconnection stopped")
     }
 

@@ -59,7 +59,7 @@ class HeartbeatManager {
             while (isActive) {
                 try {
                     sendHeartbeat("UDP")
-                    _udpHeartbeat.value.markHeartbeatSent()
+                    _udpHeartbeat.value = _udpHeartbeat.value.markHeartbeatSent()
                     delay(intervalMs)
                 } catch (e: Exception) {
                     LogUtil.e(e, "Error in UDP heartbeat")
@@ -74,7 +74,7 @@ class HeartbeatManager {
     fun stopUdpHeartbeat() {
         udpHeartbeatJob?.cancel()
         udpHeartbeatJob = null
-        _udpHeartbeat.value.reset()
+        _udpHeartbeat.value = _udpHeartbeat.value.reset()
         LogUtil.d("HeartbeatManager: UDP heartbeat stopped")
     }
 
@@ -96,7 +96,7 @@ class HeartbeatManager {
             while (isActive) {
                 try {
                     sendHeartbeat("BLE")
-                    _bleHeartbeat.value.markHeartbeatSent()
+                    _bleHeartbeat.value = _bleHeartbeat.value.markHeartbeatSent()
                     delay(intervalMs)
                 } catch (e: Exception) {
                     LogUtil.e(e, "Error in BLE heartbeat")
@@ -111,7 +111,7 @@ class HeartbeatManager {
     fun stopBleHeartbeat() {
         bleHeartbeatJob?.cancel()
         bleHeartbeatJob = null
-        _bleHeartbeat.value.reset()
+        _bleHeartbeat.value = _bleHeartbeat.value.reset()
         LogUtil.d("HeartbeatManager: BLE heartbeat stopped")
     }
 
@@ -134,7 +134,7 @@ class HeartbeatManager {
             else -> return
         }
 
-        stateFlow.value.markHeartbeatReceived()
+        stateFlow.value = stateFlow.value.markHeartbeatReceived()
         onHeartbeatReceived?.invoke(transport)
 
         scope.launch {
@@ -151,7 +151,7 @@ class HeartbeatManager {
             "BLE" -> _bleHeartbeat
             else -> return
         }
-        stateFlow.value.markHeartbeatSent()
+        stateFlow.value = stateFlow.value.markHeartbeatSent()
     }
 
     fun isHeartbeatHealthy(transport: String): Boolean {
@@ -213,7 +213,7 @@ class HeartbeatManager {
             "BLE" -> _bleHeartbeat
             else -> return
         }
-        stateFlow.value.reset()
+        stateFlow.value = stateFlow.value.reset()
         LogUtil.d("HeartbeatManager: Reset $transport heartbeat")
     }
 
@@ -246,14 +246,14 @@ class HeartbeatManager {
 
                 if (timeSinceLastReceived > timeoutThreshold && state.lastReceivedTime > 0) {
                     LogUtil.w("HeartbeatManager: $transport heartbeat timeout (missed: ${state.missedCount})")
-                    stateFlow.value.incrementTimeout()
+                    stateFlow.value = stateFlow.value.incrementTimeout()
                     onHeartbeatTimeout?.invoke(transport, stateFlow.value)
 
                     scope.launch {
                         _heartbeatEvents.emit(HeartbeatEvent.Timeout(transport, stateFlow.value))
                     }
                 } else if (state.missedCount > 0 && timeSinceLastReceived > state.intervalMs) {
-                    stateFlow.value.incrementMissed()
+                    stateFlow.value = stateFlow.value.incrementMissed()
                     LogUtil.d("HeartbeatManager: $transport missed heartbeat count: ${state.missedCount}")
 
                     scope.launch {

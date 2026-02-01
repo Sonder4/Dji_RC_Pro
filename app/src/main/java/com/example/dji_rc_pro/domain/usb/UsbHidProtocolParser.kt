@@ -21,7 +21,7 @@ object UsbHidProtocolParser {
         if (length < 18) return
         if (data[0] != HEADER_1 || data[1] != HEADER_2) return
 
-        Log.d(TAG, "HID Raw Data: ${bytesToHex(data.copyOf(length))}")
+        // Log.d(TAG, "HID Raw Data: ${bytesToHex(data.copyOf(length))}")
 
         val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
         

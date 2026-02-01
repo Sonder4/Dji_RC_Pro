@@ -5,36 +5,75 @@ import java.nio.ByteOrder
 
 /**
  * Control Packet Structure
- * Header: 0xAA
- * Payload: LX, LY, RX, RY (0-255)
- * Buttons: Bitmask (2 bytes? or 1 byte?) - Assuming 2 bytes for Xbox style compatibility
+ * Header: 0xAA (1 byte)
+ * Payload: LX, LY, RX, RY (4 bytes, 0-255)
+ * Buttons: Bitmask (2 bytes)
  * CRC: 2 bytes
- * Total: 1 + 4 + 2 + 2 = 9 bytes
+ * Total: 9 bytes
  */
 data class ControlPacket(
-    val leftStickX: Int, // 0-255
-    val leftStickY: Int, // 0-255
-    val rightStickX: Int, // 0-255
-    val rightStickY: Int, // 0-255
-    val buttonMask: Int // 16-bit mask
+    val leftStickX: Int = CENTER_VALUE,   // 0-255
+    val leftStickY: Int = CENTER_VALUE,   // 0-255
+    val rightStickX: Int = CENTER_VALUE,  // 0-255
+    val rightStickY: Int = CENTER_VALUE,  // 0-255
+    val buttonMask: Int = 0               // 16-bit mask
 ) {
-    fun toByteArray(): ByteArray {
-        val buffer = ByteBuffer.allocate(9)
-        buffer.order(ByteOrder.LITTLE_ENDIAN) // Xbox usually LE, but Network often BE. Let's use LE for now.
+    fun toByteArray(): ByteArray = ByteBuffer.allocate(PACKET_SIZE).apply {
+        order(ByteOrder.LITTLE_ENDIAN)
+        put(HEADER)
+        put(leftStickX.toByte())
+        put(leftStickY.toByte())
+        put(rightStickX.toByte())
+        put(rightStickY.toByte())
+        putShort(buttonMask.toShort())
+        putShort(Crc16.compute(array().copyOfRange(0, HEADER_SIZE + PAYLOAD_SIZE)).toShort())
+    }.array()
 
-        buffer.put(0xAA.toByte())
-        buffer.put(leftStickX.toByte())
-        buffer.put(leftStickY.toByte())
-        buffer.put(rightStickX.toByte())
-        buffer.put(rightStickY.toByte())
-        buffer.putShort(buttonMask.toShort())
+    companion object {
+        const val HEADER: Byte = 0xAA.toByte()
+        const val PACKET_SIZE = 9
+        const val HEADER_SIZE = 1
+        const val PAYLOAD_SIZE = 6  // 4 sticks + 2 buttons
+        const val CRC_SIZE = 2
+        const val CENTER_VALUE = 127
 
-        // Calculate CRC on first 7 bytes
-        val payload = buffer.array().copyOfRange(0, 7)
-        val crc = Crc16.compute(payload)
-        
-        buffer.putShort(crc.toShort())
+        /**
+         * Parse byte array to ControlPacket
+         * Returns null if data is invalid or CRC check fails
+         */
+        fun fromByteArray(data: ByteArray): ControlPacket? {
+            if (data.size != PACKET_SIZE || data[0] != HEADER) return null
 
-        return buffer.array()
+            val payload = data.copyOfRange(0, HEADER_SIZE + PAYLOAD_SIZE)
+            val receivedCrc = ((data[7].toInt() and 0xFF) shl 8) or (data[8].toInt() and 0xFF)
+
+            if (Crc16.compute(payload) != receivedCrc) return null
+
+            return ControlPacket(
+                leftStickX = data[1].toInt() and 0xFF,
+                leftStickY = data[2].toInt() and 0xFF,
+                rightStickX = data[3].toInt() and 0xFF,
+                rightStickY = data[4].toInt() and 0xFF,
+                buttonMask = ((data[5].toInt() and 0xFF) shl 8) or (data[6].toInt() and 0xFF)
+            )
+        }
+
+        /**
+         * Create packet from current controller state
+         * Convenience method for services
+         */
+        fun fromControllerState(
+            leftStickX: Int,
+            leftStickY: Int,
+            rightStickX: Int,
+            rightStickY: Int,
+            buttonMask: Int
+        ): ByteArray = ControlPacket(
+            leftStickX = leftStickX,
+            leftStickY = leftStickY,
+            rightStickX = rightStickX,
+            rightStickY = rightStickY,
+            buttonMask = buttonMask
+        ).toByteArray()
     }
 }

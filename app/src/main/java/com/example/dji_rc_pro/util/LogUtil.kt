@@ -1,174 +1,98 @@
 package com.example.dji_rc_pro.util
 
-import android.util.Log
 import timber.log.Timber
 
+/**
+ * Unified logging utility using Timber
+ * Provides consistent logging across the application
+ */
 object LogUtil {
     const val DEFAULT_TAG = "DjiRCPro"
-    private var customTag: String = DEFAULT_TAG
+    @JvmStatic
+    var customTag: String = DEFAULT_TAG
+        private set
 
-    fun setTag(tag: String) {
-        customTag = tag
-    }
+    fun setTag(tag: String) { customTag = tag }
+    fun resetTag() { customTag = DEFAULT_TAG }
 
-    fun resetTag() {
-        customTag = DEFAULT_TAG
-    }
+    @JvmStatic
+    fun d(msg: String, tag: String = customTag) = Timber.tag(tag).d(msg)
 
-    fun d(message: String, tag: String = customTag) {
-        Timber.d(tag, message)
-    }
+    @JvmStatic
+    fun d(msg: String, throwable: Throwable, tag: String = customTag) = Timber.tag(tag).d(throwable, msg)
 
-    fun d(message: String, vararg args: Any?, tag: String = customTag) {
-        Timber.d(tag, message, *args)
-    }
+    @JvmStatic
+    fun i(msg: String, tag: String = customTag) = Timber.tag(tag).i(msg)
 
-    fun i(message: String, tag: String = customTag) {
-        Timber.i(tag, message)
-    }
+    @JvmStatic
+    fun i(msg: String, throwable: Throwable, tag: String = customTag) = Timber.tag(tag).i(throwable, msg)
 
-    fun i(message: String, vararg args: Any?, tag: String = customTag) {
-        Timber.i(tag, message, *args)
-    }
+    @JvmStatic
+    fun w(msg: String, tag: String = customTag) = Timber.tag(tag).w(msg)
 
-    fun w(message: String, tag: String = customTag) {
-        Timber.w(tag, message)
-    }
+    @JvmStatic
+    fun w(msg: String, throwable: Throwable, tag: String = customTag) = Timber.tag(tag).w(throwable, msg)
 
-    fun w(message: String, vararg args: Any?, tag: String = customTag) {
-        Timber.w(tag, message, *args)
-    }
+    @JvmStatic
+    fun w(throwable: Throwable, tag: String = customTag) = Timber.tag(tag).w(throwable)
 
-    fun w(throwable: Throwable, message: String? = null, tag: String = customTag) {
-        if (message != null) {
-            Timber.w(throwable, tag, message)
-        } else {
-            Timber.w(throwable, tag, throwable.message ?: "Unknown exception")
-        }
-    }
+    @JvmStatic
+    fun e(msg: String, tag: String = customTag) = Timber.tag(tag).e(msg)
 
-    fun e(message: String, tag: String = customTag) {
-        Timber.e(tag, message)
-    }
+    @JvmStatic
+    fun e(msg: String, throwable: Throwable, tag: String = customTag) = Timber.tag(tag).e(throwable, msg)
 
-    fun e(message: String, vararg args: Any?, tag: String = customTag) {
-        Timber.e(tag, message, *args)
-    }
+    @JvmStatic
+    fun e(throwable: Throwable, tag: String = customTag) = Timber.tag(tag).e(throwable)
 
-    fun e(throwable: Throwable, message: String? = null, tag: String = customTag) {
-        if (message != null) {
-            Timber.e(throwable, tag, message)
-        } else {
-            Timber.e(throwable, tag, throwable.message ?: "Unknown exception")
-        }
-    }
+    @JvmStatic
+    fun v(msg: String, tag: String = customTag) = Timber.tag(tag).v(msg)
 
-    fun wtf(message: String, tag: String = customTag) {
-        Timber.wtf(tag, message)
-    }
+    @JvmStatic
+    fun v(msg: String, throwable: Throwable, tag: String = customTag) = Timber.tag(tag).v(throwable, msg)
 
-    fun wtf(throwable: Throwable, message: String? = null, tag: String = customTag) {
-        if (message != null) {
-            Timber.wtf(throwable, tag, message)
-        } else {
-            Timber.wtf(throwable, tag, throwable.message ?: "Unknown fatal exception")
-        }
-    }
-
-    fun v(message: String, tag: String = customTag) {
-        Timber.v(tag, message)
-    }
-
-    fun v(message: String, vararg args: Any?, tag: String = customTag) {
-        Timber.v(tag, message, *args)
-    }
-
-    fun log(priority: Int, message: String, tag: String = customTag) {
-        Timber.log(priority, tag, message)
-    }
-
-    fun log(priority: Int, message: String, vararg args: Any?, tag: String = customTag) {
-        Timber.log(priority, tag, message, *args)
-    }
-
-    fun log(priority: Int, throwable: Throwable, message: String? = null, tag: String = customTag) {
-        if (message != null) {
-            Timber.log(priority, throwable, tag, message)
-        } else {
-            Timber.log(priority, throwable, tag, throwable.message ?: "Unknown exception")
-        }
-    }
-
-    fun enterMethod(tag: String = customTag) {
-        Timber.d(tag, "Enter method: ${getMethodName()}")
-    }
-
-    fun exitMethod(tag: String = customTag) {
-        Timber.d(tag, "Exit method: ${getMethodName()}")
-    }
-
-    fun methodFlow(message: String, tag: String = customTag) {
-        Timber.d(tag, "[FLOW] $message - ${getMethodName()}")
-    }
-
-    private fun getMethodName(): String {
-        val stackTrace = Thread.currentThread().stackTrace
-        return stackTrace.getOrNull(4)?.let { element ->
-            "${element.className}.${element.methodName}()"
-        } ?: "Unknown"
-    }
-
-    fun performance(tag: String = customTag, block: () -> Unit): Long {
-        val startTime = System.nanoTime()
-        block()
-        val duration = (System.nanoTime() - startTime) / 1_000_000
-        Timber.d(tag, "Performance: ${duration}ms")
-        return duration
-    }
-
-    suspend fun performanceAsync(tag: String = customTag, block: suspend () -> Unit): Long {
-        val startTime = System.nanoTime()
-        block()
-        val duration = (System.nanoTime() - startTime) / 1_000_000
-        Timber.d(tag, "Performance: ${duration}ms")
-        return duration
-    }
-
-    fun benchmark(name: String, iterations: Int = 1000, tag: String = customTag, block: () -> Unit) {
-        val warmup = 10
-        repeat(warmup) { block() }
-
-        val times = mutableListOf<Long>()
-        repeat(iterations) {
-            val start = System.nanoTime()
+    /**
+     * Measure execution time of a block
+     */
+    inline fun <R> measureTime(tag: String = customTag, blockName: String = "Block", block: () -> R): R {
+        val start = System.currentTimeMillis()
+        return try {
             block()
-            times.add((System.nanoTime() - start) / 1_000)
+        } finally {
+            val duration = System.currentTimeMillis() - start
+            d("$blockName executed in ${duration}ms", tag)
         }
+    }
 
-        val avg = times.average()
-        val min = times.minOrNull() ?: 0
-        val max = times.maxOrNull() ?: 0
-
-        Timber.d(tag, "Benchmark '$name': avg=${avg.toLong()}us, min=${min}us, max=${max}us, iterations=$iterations")
+    /**
+     * Measure execution time of a suspend block
+     */
+    suspend inline fun <R> measureTimeAsync(tag: String = customTag, blockName: String = "Block", crossinline block: suspend () -> R): R {
+        val start = System.currentTimeMillis()
+        return try {
+            block()
+        } finally {
+            val duration = System.currentTimeMillis() - start
+            d("$blockName executed in ${duration}ms", tag)
+        }
     }
 }
 
-inline fun <T> T.logD(tag: String = LogUtil.DEFAULT_TAG): T {
-    LogUtil.d(toString(), tag)
-    return this
+/**
+ * Extension functions for convenient logging
+ */
+fun <T> T.logD(tag: String = LogUtil.DEFAULT_TAG, prefix: String = ""): T = apply {
+    LogUtil.d("$prefix$this", tag)
 }
 
-inline fun <T> T.logI(tag: String = LogUtil.DEFAULT_TAG): T {
-    LogUtil.i(toString(), tag)
-    return this
+fun <T> T.logI(tag: String = LogUtil.DEFAULT_TAG, prefix: String = ""): T = apply {
+    LogUtil.i("$prefix$this", tag)
 }
 
-inline fun <T> T.logW(tag: String = LogUtil.DEFAULT_TAG): T {
-    LogUtil.w(toString(), tag)
-    return this
+fun <T> T.logW(tag: String = LogUtil.DEFAULT_TAG, prefix: String = ""): T = apply {
+    LogUtil.w("$prefix$this", tag)
 }
 
-inline fun <T> T.logE(tag: String = LogUtil.DEFAULT_TAG): T {
-    LogUtil.e(toString(), tag)
-    return this
+fun <T> T.logE(tag: String = LogUtil.DEFAULT_TAG, prefix: String = ""): T = apply {
+    LogUtil.e("$prefix$this", tag)
 }
