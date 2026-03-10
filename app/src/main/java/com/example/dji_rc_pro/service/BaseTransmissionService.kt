@@ -1,10 +1,15 @@
 package com.example.dji_rc_pro.service
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
+import androidx.core.app.NotificationCompat
+import com.example.dji_rc_pro.R
 import com.example.dji_rc_pro.domain.input.ControllerManager
-import com.example.dji_rc_pro.protocol.ControlPacket
+import com.example.dji_rc_pro.protocol.Ros2ChassisControlPacket
 import kotlinx.coroutines.*
 
 /**
@@ -15,6 +20,7 @@ abstract class BaseTransmissionService : Service() {
 
     protected val serviceJob = SupervisorJob()
     protected val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private var isForegroundStarted = false
 
     /**
      * Action to start transmission, must be defined by subclasses
@@ -36,14 +42,59 @@ abstract class BaseTransmissionService : Service() {
      */
     protected abstract val serviceTag: String
 
+    protected open val notificationChannelId: String
+        get() = "transmission_services"
+
+    protected open val notificationTitle: String
+        get() = serviceTag
+
+    protected open val notificationText: String
+        get() = "Transmission active"
+
+    protected open val notificationId: Int
+        get() = serviceTag.hashCode()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            startAction -> startTransmission()
+            startAction -> {
+                ensureForegroundStarted()
+                startTransmission()
+            }
             stopAction -> stopTransmission()
         }
         return START_STICKY
+    }
+
+    private fun ensureForegroundStarted() {
+        if (isForegroundStarted) {
+            return
+        }
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            notificationManager.getNotificationChannel(notificationChannelId) == null) {
+            val channel = NotificationChannel(
+                notificationChannelId,
+                "Transmission Services",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Foreground services for BLE and UDP control transport"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(this, notificationChannelId)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(notificationTitle)
+            .setContentText(notificationText)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+
+        startForeground(notificationId, notification)
+        isForegroundStarted = true
     }
 
     /**
@@ -74,6 +125,10 @@ abstract class BaseTransmissionService : Service() {
     protected open fun stopTransmission() {
         logInfo("Stopping transmission service")
         serviceJob.cancelChildren()
+        if (isForegroundStarted) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            isForegroundStarted = false
+        }
         stopSelf()
     }
 
@@ -82,13 +137,7 @@ abstract class BaseTransmissionService : Service() {
      */
     protected fun createControlPacket(): ByteArray {
         val state = ControllerManager.instance.controllerState.value
-        return ControlPacket(
-            leftStickX = state.leftStickX,
-            leftStickY = state.leftStickY,
-            rightStickX = state.rightStickX,
-            rightStickY = state.rightStickY,
-            buttonMask = state.buttonMask
-        ).toByteArray()
+        return Ros2ChassisControlPacket.fromControllerState(state)
     }
 
     /**

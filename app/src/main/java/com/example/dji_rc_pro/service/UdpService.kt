@@ -6,18 +6,18 @@ import com.example.dji_rc_pro.manager.ConnectionManager
 import com.example.dji_rc_pro.manager.FrequencyManager
 import com.example.dji_rc_pro.manager.HeartbeatManager
 import com.example.dji_rc_pro.manager.ReconnectManager
+import com.example.dji_rc_pro.manager.DataLogManager
 import com.example.dji_rc_pro.manager.UdpCustomDataManager
 import com.example.dji_rc_pro.manager.UdpDataLogManager
 import com.example.dji_rc_pro.util.ErrorCode
 import com.example.dji_rc_pro.util.LogUtil
+import com.example.dji_rc_pro.util.UdpEndpointConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.net.DatagramPacket
 import java.net.DatagramSocket
-import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.NetworkInterface
 import java.net.SocketException
 
 /**
@@ -35,17 +35,18 @@ class UdpService : BaseTransmissionService() {
     private var connectionManager: ConnectionManager? = null
     private var heartbeatManager: HeartbeatManager? = null
     private var reconnectManager: ReconnectManager? = null
+    private var dataLogManager: DataLogManager? = null
+    @Deprecated("Use dataLogManager instead")
     private var udpDataLogManager: UdpDataLogManager? = null
     private var targetIp: String = ""
     private var targetPort: Int = 0
+    private var resolvedTargetAddress: InetAddress? = null
 
     private val isRunning: Boolean
         get() = socket != null && serviceJob.isActive
 
     private var receiveJob: Job? = null
     
-    // USB HID数据队列
-    private val usbHidDataQueue = java.util.concurrent.ConcurrentLinkedQueue<ByteArray>()
 
     companion object {
         private const val TAG = "UdpService"
@@ -77,14 +78,32 @@ class UdpService : BaseTransmissionService() {
         connManager: ConnectionManager,
         hbManager: HeartbeatManager,
         rcManager: ReconnectManager,
-        dataLogManager: UdpDataLogManager
+        dataLogManager: DataLogManager
     ) {
         this.frequencyManager = freqManager
         this.connectionManager = connManager
         this.heartbeatManager = hbManager
         this.reconnectManager = rcManager
-        this.udpDataLogManager = dataLogManager
+        this.dataLogManager = dataLogManager
+        this.udpDataLogManager = null // Deprecated
         logDebug("UdpService initialized with managers")
+    }
+
+    @Deprecated("Use the new initialize method with DataLogManager")
+    fun initialize(
+        freqManager: FrequencyManager,
+        connManager: ConnectionManager,
+        hbManager: HeartbeatManager,
+        rcManager: ReconnectManager,
+        udpDataLogManager: UdpDataLogManager
+    ) {
+        this.frequencyManager = freqManager
+        this.connectionManager = connManager
+        this.heartbeatManager = hbManager
+        this.reconnectManager = rcManager
+        this.udpDataLogManager = udpDataLogManager
+        this.dataLogManager = DataLogManager.getInstance()
+        logDebug("UdpService initialized with managers (legacy)")
     }
 
     override fun startTransmission() {
@@ -98,9 +117,10 @@ class UdpService : BaseTransmissionService() {
         serviceScope.launch {
             try {
                 val repo = ConfigRepository.get()
-                targetIp = repo.targetIp.first()
+                targetIp = UdpEndpointConfig.normalizeTargetAddress(repo.targetIp.first())
                 targetPort = repo.targetPort.first()
                 val localPort = repo.localPort.first()
+                resolvedTargetAddress = UdpEndpointConfig.resolveAddress(targetIp)
 
                 logInfo("Target: $targetIp:$targetPort, Local Port: $localPort")
                 Log.d(TAG, "UDP Connecting to $targetIp:$targetPort (local port: $localPort)")
@@ -138,32 +158,16 @@ class UdpService : BaseTransmissionService() {
     private suspend fun openSocket(localPort: Int) {
         Log.d(TAG, "Opening socket on port $localPort")
         try {
-            // 获取wlan0接口的IPv4地址
-            val wlanInterface = NetworkInterface.getNetworkInterfaces().toList()
-                .find { it.name == "wlan0" }
-            
-            val bindAddress = if (wlanInterface != null) {
-                val inetAddress = wlanInterface.inetAddresses.toList()
-                    .filterIsInstance<Inet4Address>()
-                    .firstOrNull()
-                if (inetAddress != null) {
-                    Log.d(TAG, "Binding to wlan0 interface: $inetAddress")
-                    inetAddress
-                } else {
-                    Log.d(TAG, "No IPv4 address on wlan0, using 0.0.0.0")
-                    Inet4Address.getByName("0.0.0.0")
-                }
-            } else {
-                Log.d(TAG, "wlan0 not found, using 0.0.0.0")
-                Inet4Address.getByName("0.0.0.0")
-            }
-            
+            val remoteAddress = resolvedTargetAddress
+                ?: throw IllegalStateException("Target address has not been resolved")
+            val bindAddress = UdpEndpointConfig.getWildcardBindAddress(remoteAddress)
+
             socket = DatagramSocket(null).apply {
                 reuseAddress = true
                 broadcast = false
                 soTimeout = SOCKET_TIMEOUT_MS
                 bind(InetSocketAddress(bindAddress, localPort))
-                Log.d(TAG, "Socket successfully bound to $bindAddress:$localPort")
+                Log.d(TAG, "Socket successfully bound to $bindAddress:$localPort for $remoteAddress")
                 logDebug("Socket opened on $bindAddress:$localPort")
             }
         } catch (e: SocketException) {
@@ -186,6 +190,7 @@ class UdpService : BaseTransmissionService() {
                     val sourcePort = packet.port
                     
                     // 记录到数据日志
+                    dataLogManager?.addUdpReceivedLog(receivedData)
                     udpDataLogManager?.addReceivedLog(receivedData)
                     Log.d(TAG, "UDP RX [${receivedData.size}]: ${bytesToHex(receivedData)}")
                     logDebug("Received ${receivedData.size} bytes from $sourceIp:$sourcePort")
@@ -233,34 +238,21 @@ class UdpService : BaseTransmissionService() {
     }
 
     override suspend fun transmitPacket() {
-        // 从队列中获取USB HID数据并发送
-        val packetData = usbHidDataQueue.poll()
-        if (packetData != null) {
-            val address = InetAddress.getByName(targetIp)
-            val packet = DatagramPacket(packetData, packetData.size, address, targetPort)
+        val packetData = createControlPacket()
+        val address = resolvedTargetAddress ?: InetAddress.getByName(targetIp)
+        val packet = DatagramPacket(packetData, packetData.size, address, targetPort)
 
-            socket?.send(packet)
-            udpDataLogManager?.addSentLog(packetData)
-            Log.d(TAG, "UDP TX [${packetData.size}]: ${bytesToHex(packetData)}")
+        socket?.send(packet)
+        dataLogManager?.addUdpSentLog(packetData)
+        udpDataLogManager?.addSentLog(packetData)
+        Log.d(TAG, "UDP TX [${packetData.size}]: ${bytesToHex(packetData)}")
 
-            connectionManager?.onUdpActivity(
-                bytesSent = packetData.size.toLong(),
-                bytesReceived = 0
-            )
-        }
+        connectionManager?.onUdpActivity(
+            bytesSent = packetData.size.toLong(),
+            bytesReceived = 0
+        )
     }
     
-    /**
-     * 添加USB HID数据到发送队列
-     * @param data USB HID原始数据
-     */
-    fun addUsbHidData(data: ByteArray) {
-        usbHidDataQueue.offer(data)
-        // 限制队列大小，防止内存溢出
-        while (usbHidDataQueue.size > 100) {
-            usbHidDataQueue.poll()
-        }
-    }
 
     /**
      * 发送自定义数据到指定目标
@@ -271,10 +263,16 @@ class UdpService : BaseTransmissionService() {
      * @param targetPort 目标端口
      */
     suspend fun sendCustomData(data: ByteArray, targetIp: String, targetPort: Int) {
-        val address = InetAddress.getByName(targetIp)
+        val normalizedTargetIp = UdpEndpointConfig.normalizeTargetAddress(targetIp)
+        val address = if (normalizedTargetIp == this.targetIp) {
+            resolvedTargetAddress ?: InetAddress.getByName(normalizedTargetIp)
+        } else {
+            InetAddress.getByName(normalizedTargetIp)
+        }
         val packet = DatagramPacket(data, data.size, address, targetPort)
         
         socket?.send(packet)
+        dataLogManager?.addUdpSentLog(data)
         udpDataLogManager?.addSentLog(data)
         Log.d(TAG, "UDP Custom TX [${data.size}]: ${bytesToHex(data)}")
         
@@ -290,7 +288,8 @@ class UdpService : BaseTransmissionService() {
 
     private fun handleError(e: Exception) {
         val errorCode = when (e) {
-            is SocketException -> ErrorCode.UDP_SOCKET_CREATE_FAILED
+            is SocketException -> ErrorCode.UDP_BIND_FAILED
+            is IllegalArgumentException -> ErrorCode.UDP_CONNECTION_FAILED
             else -> ErrorCode.UDP_CONNECTION_FAILED
         }
         connectionManager?.onUdpError(errorCode)
@@ -324,6 +323,7 @@ class UdpService : BaseTransmissionService() {
             connectionManager?.onUdpDisconnected()
         }
         socket = null
+        resolvedTargetAddress = null
     }
 
     override fun stopTransmission() {
@@ -347,9 +347,11 @@ class UdpService : BaseTransmissionService() {
 
     fun updateTarget(ip: String, port: Int) {
         if (isRunning) {
-            logDebug("Updating target: $ip:$port")
-            targetIp = ip
+            val normalizedIp = UdpEndpointConfig.normalizeTargetAddress(ip)
+            logDebug("Updating target: $normalizedIp:$port")
+            targetIp = normalizedIp
             targetPort = port
+            resolvedTargetAddress = InetAddress.getByName(normalizedIp)
         }
     }
 

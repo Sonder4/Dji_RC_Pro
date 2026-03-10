@@ -157,3 +157,10 @@ Usage notes:
 <!-- SKILLS_TABLE_END -->
 
 </skills_system>
+
+## Terminal Stability
+
+- In this repository environment, avoid `multi_tool_use.parallel` for shell-heavy debugging work. Prefer one short `exec_command` at a time.
+- Avoid commands that leave long-running PTY/background sessions, including very large `adb logcat -d` dumps, recursive `find ..`, wide `rg` scans over volatile directories such as `/tmp`, and shell loops that fan out across many files.
+- If device debugging is needed, prefer narrowly scoped commands against known files, known paths, and small time windows so the terminal session exits cleanly.
+- If the terminal UI reports background terminals or waits on a PTY, stop opening new sessions until the current command has fully exited; otherwise the terminal wrapper may crash with `Waited for background terminal` or `Segmentation fault (core dumped)`.
