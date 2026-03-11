@@ -86,30 +86,30 @@ class MainActivity : ComponentActivity() {
 
         intent.getStringExtra(EXTRA_TRANSPORT_MODE)?.let { rawMode ->
             val mode = TransportIsolationMode.fromStorageValue(rawMode)
-            viewModel.setTransportIsolationMode(mode)
+            viewModel.applyDebugTransportIsolationMode(mode)
             LogUtil.i("Applied debug transport mode=$rawMode", TAG)
         }
 
         intent.getStringExtra(EXTRA_CONNECTION_MODE)?.let { rawMode ->
             val mode = ConnectionMode.fromStorageValue(rawMode)
-            viewModel.setConnectionMode(mode)
+            viewModel.applyDebugConnectionMode(mode)
             LogUtil.i("Applied debug connection mode=$rawMode", TAG)
         }
 
         intent.getStringExtra(EXTRA_PAIR_CODE)?.let { pairCode ->
-            viewModel.setPairCode(pairCode)
+            viewModel.applyDebugPairCode(pairCode)
             LogUtil.i("Applied debug pair code", TAG)
         }
 
         intent.getStringExtra(EXTRA_TARGET_IP)?.takeIf { it.isNotBlank() }?.let { targetIp ->
-            viewModel.updateTargetIp(targetIp)
+            viewModel.applyDebugTargetIp(targetIp)
             LogUtil.i("Applied debug target ip=$targetIp", TAG)
         }
 
         if (intent.hasExtra(EXTRA_TARGET_PORT)) {
             val port = intent.getIntExtra(EXTRA_TARGET_PORT, -1)
             if (port > 0) {
-                viewModel.updateTargetPort(port.toString())
+                viewModel.applyDebugTargetPort(port.toString())
                 LogUtil.i("Applied debug target port=$port", TAG)
             }
         }

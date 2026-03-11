@@ -53,7 +53,7 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val configRepository = ConfigRepository.get()
     private val wifiDiscoveryManager = WifiDiscoveryManager(application)
-    private val launchOverrides = DebugLaunchOverrideStore.current()
+    private var launchOverrides = DebugLaunchOverrideStore.current()
     
     // UI State
     private val _isUdpRunning = MutableStateFlow(false)
@@ -141,8 +141,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun shouldUseBleAutoPair(mode: ConnectionMode, transportMode: TransportIsolationMode): Boolean {
-        return effectiveConnectionMode(mode) == ConnectionMode.AUTO_PAIR &&
-            effectiveTransportMode(transportMode).allowsBle
+        val resolvedTransportMode = effectiveTransportMode(transportMode)
+        return resolvedTransportMode.allowsBle &&
+            (resolvedTransportMode == TransportIsolationMode.BLE_ONLY ||
+                effectiveConnectionMode(mode) == ConnectionMode.AUTO_PAIR)
     }
 
     private fun effectiveTransportMode(mode: TransportIsolationMode = transportIsolationMode.value): TransportIsolationMode {
@@ -163,6 +165,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun effectiveTargetPort(value: Int = targetPort.value): Int {
         return launchOverrides?.targetPort ?: value
+    }
+
+    private fun clearLaunchOverrides() {
+        launchOverrides = null
+        DebugLaunchOverrideStore.clear()
     }
 
     private fun shouldManageBleAutoScan(
@@ -304,15 +311,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 wifiDiscoveryManager.stop()
                 pendingPairTimeoutJob?.cancel()
                 pendingPairHostId = null
+                autoPairPaused = false
                 if (_isUdpRunning.value) {
                     stopUdp()
                 }
                 _autoPairStatus.value = wifiAutoPairDisabledStatusMessage()
+                _bleGatewayStatus.value = if (isBleConnectedOrConnecting()) {
+                    "BLE 已连接，等待短码配对"
+                } else {
+                    "正在搜索 ROS2 BLE 网关"
+                }
+                if (!isBleConnectedOrConnecting() && !bleManager.isScanning.value) {
+                    bleManager.startScan()
+                }
             }
 
             TransportIsolationMode.BLE_UDP -> {
                 if (shouldManageBleAutoScan() && canStartBleScan()) {
                     bleManager.startScan()
+                }
+                if (bleConnectionState.value == BluetoothProfile.STATE_DISCONNECTED && bleManager.isScanning.value) {
+                    _bleGatewayStatus.value = "正在搜索 ROS2 BLE 网关"
                 }
             }
         }
@@ -780,6 +799,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateTargetIp(ip: String) {
+        clearLaunchOverrides()
         viewModelScope.launch {
             configRepository.setTargetIp(UdpEndpointConfig.normalizeTargetAddress(ip))
         }
@@ -787,6 +807,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateTargetPort(portStr: String): Boolean {
         val port = UdpEndpointConfig.parsePort(portStr) ?: return false
+        clearLaunchOverrides()
         viewModelScope.launch {
             configRepository.setTargetPort(port)
         }
@@ -847,18 +868,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setConnectionMode(mode: ConnectionMode) {
+        if (effectiveTransportMode() == TransportIsolationMode.BLE_ONLY && mode == ConnectionMode.MANUAL) {
+            showToast("BLE Only 模式固定使用 Auto Pair", 1800)
+            return
+        }
+        clearLaunchOverrides()
         viewModelScope.launch {
             configRepository.setConnectionMode(mode)
         }
     }
 
     fun setTransportIsolationMode(mode: TransportIsolationMode) {
+        clearLaunchOverrides()
         viewModelScope.launch {
             configRepository.setTransportIsolationMode(mode)
+            if (mode == TransportIsolationMode.BLE_ONLY) {
+                configRepository.setConnectionMode(ConnectionMode.AUTO_PAIR)
+            }
         }
     }
 
     fun setPairCode(value: String) {
+        clearLaunchOverrides()
         viewModelScope.launch {
             configRepository.setPairCode(value.trim())
         }
@@ -932,6 +963,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!ensureBleAllowedForUserAction()) {
             return
         }
+        _bleGatewayStatus.value = "正在搜索 ROS2 BLE 网关"
         bleManager.startScan()
     }
 
@@ -943,6 +975,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!ensureBleAllowedForUserAction()) {
             return
         }
+        _bleGatewayStatus.value = "正在连接 ${device.device.name ?: device.device.address}"
         bleManager.connect(device.device)
     }
     
@@ -1118,7 +1151,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun showBleDialog() {
+        if (!ensureBleAllowedForUserAction()) {
+            return
+        }
+        if (!isBleConnectedOrConnecting() && !bleManager.isScanning.value) {
+            bleManager.startScan()
+            _bleGatewayStatus.value = "正在搜索 ROS2 BLE 网关"
+        }
         _showBleDialog.value = true
+    }
+
+    fun applyDebugConnectionMode(mode: ConnectionMode) {
+        viewModelScope.launch {
+            configRepository.setConnectionMode(
+                if (effectiveTransportMode() == TransportIsolationMode.BLE_ONLY && mode == ConnectionMode.MANUAL) {
+                    ConnectionMode.AUTO_PAIR
+                } else {
+                    mode
+                }
+            )
+        }
+    }
+
+    fun applyDebugTransportIsolationMode(mode: TransportIsolationMode) {
+        viewModelScope.launch {
+            configRepository.setTransportIsolationMode(mode)
+            if (mode == TransportIsolationMode.BLE_ONLY) {
+                configRepository.setConnectionMode(ConnectionMode.AUTO_PAIR)
+            }
+        }
+    }
+
+    fun applyDebugPairCode(value: String) {
+        viewModelScope.launch {
+            configRepository.setPairCode(value.trim())
+        }
+    }
+
+    fun applyDebugTargetIp(ip: String) {
+        viewModelScope.launch {
+            configRepository.setTargetIp(UdpEndpointConfig.normalizeTargetAddress(ip))
+        }
+    }
+
+    fun applyDebugTargetPort(portStr: String): Boolean {
+        val port = UdpEndpointConfig.parsePort(portStr) ?: return false
+        viewModelScope.launch {
+            configRepository.setTargetPort(port)
+        }
+        return true
     }
 
     fun dismissBleDialog() {

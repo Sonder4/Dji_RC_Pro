@@ -52,4 +52,8 @@ object DebugLaunchOverrideStore {
     }
 
     fun current(): DebugLaunchOverrides? = current
+
+    fun clear() {
+        current = null
+    }
 }

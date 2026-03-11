@@ -1,6 +1,6 @@
 # DJI RC Pro 独立 ROS2 工作空间说明
 
-**最后更新**: 2026-03-10  
+**最后更新**: 2026-03-11  
 **适用目录**: `/home/xuan/Tools/Dji_RC_Pro`  
 **目标**: 说明 `ros2_ws_dji_rc_pro/` 如何作为独立工作空间承接 DJI RC Pro 的 `udp_only`、`ble_only`、`ble_udp` 三种模式，并给出当前可重复执行的构建、启动与验收方法。
 
@@ -57,7 +57,7 @@ ros2_ws_dji_rc_pro/
 2. 构建 `ros2_ws_dji_rc_pro/`
 3. 把输出写到 `logs/ros2/colcon_build_*.log`
 
-2026-03-10 已验证通过：
+2026-03-11 已验证通过：
 
 - `GRADLE_USER_HOME=/tmp/gradle ./gradlew testDebugUnitTest assembleDebug`
 - `./scripts/build_ros2_dji_rc_pro_ws.sh`
@@ -205,32 +205,32 @@ ros2 topic echo /dji_rc_pro_bridge/transport_status
 
 Android 启动命令与 `adb` 抓日志方法，统一记录在：
 
-- `Docs/04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-10.md`
+- `Docs/04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-11.md`
 
 ---
 
-## 6. 2026-03-10 真机复验结论
+## 6. 2026-03-11 真机复验结论
 
 本轮对三种模式重新完成了 Android + ROS2 真机综合复验，结果如下：
 
 | 模式 | 结果 | ROS2 侧证据 |
 |---|---|---|
-| `udp_only` | 通过 | `Offer sent`、`Paired client`、`CHASSIS_CTRL decoded`，`transport_status` 为 `udp_active=1 ble_active=0` |
-| `ble_only` | 通过 | `BLE service composition transport_mode=ble_only characteristics=[...0002,...0004]`，`BLE-only auth accepted`，`/dji_rc_pro_bridge/ble/control_frame` 有数据 |
-| `ble_udp` | 通过 | `BLE service composition transport_mode=ble_udp`，并且完整暴露 `pair_control/control_stream/network_info/status`；`transport_status` 为 `udp_active=1 ble_active=0` |
+| `udp_only` | 通过 | `Offer sent`、`Paired client`、`CHASSIS_CTRL decoded`，并出现多条非零 `w` 解码值；`transport_status` 为 `udp_active=1 ble_active=0` |
+| `ble_only` | 通过 | `BLE service composition transport_mode=ble_only characteristics=[...0002,...0004]`，`BLE-only auth accepted`，`/dji_rc_pro_bridge/ble/control_frame` 有数据，`transport_status` 为 `udp_active=0 ble_active=1` |
+| `ble_udp` | 通过 | `BLE service composition transport_mode=ble_udp`，并完整走通 `pair_control/control_stream/network_info/status`；`transport_status` 为 `udp_active=1 ble_active=0` |
 
 对应日志文件：
 
-- `logs/ros2/dji_rc_pro_gateway_2026-03-10_14-38-08.log`
-- `logs/ros2/dji_rc_pro_gateway_2026-03-10_14-17-45.log`
-- `logs/ros2/dji_rc_pro_gateway_2026-03-10_14-35-45.log`
-- `logs/adb/transport_udp_2026-03-10_14-39-19.log`
-- `logs/adb/transport_ble_2026-03-10_14-18-49.log`
-- `logs/adb/transport_ble_udp_2026-03-10_14-37-21.log`
+- `logs/ros2/dji_rc_pro_gateway_2026-03-11_11-03-55.log`
+- `logs/ros2/dji_rc_pro_gateway_2026-03-11_11-11-40.log`
+- `logs/ros2/dji_rc_pro_gateway_2026-03-11_11-15-59.log`
+- `logs/adb/transport_ble_2026-03-11_11-07-15.log`
+- `logs/adb/transport_udp_2026-03-11_11-15-18.log`
+- `logs/adb/transport_all_2026-03-11_11-17-17.log`
 
 完整命令和日志摘录见：
 
-- `Docs/04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-10.md`
+- `Docs/04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-11.md`
 
 ---
 

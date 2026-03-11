@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -40,6 +41,9 @@ fun VirtualStick(
     val sizePx = with(LocalDensity.current) { size.toPx() }
     val radius = sizePx / 2
     val knobRadius = sizePx / 6
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val ringColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+    val knobColor = MaterialTheme.colorScheme.primary
     
     // If not dragging, calculate position from props
     val knobPosition = if (!isDragging) {
@@ -96,17 +100,20 @@ fun VirtualStick(
             }
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
-            // Draw Background
             drawCircle(
-                color = Color.Gray.copy(alpha = 0.3f),
+                color = trackColor,
                 radius = radius
             )
-            
-            // Draw Knob
+
             drawCircle(
-                color = Color.Cyan,
+                color = ringColor,
+                radius = radius * 0.68f
+            )
+
+            drawCircle(
+                color = knobColor,
                 radius = knobRadius,
-                center = center + knobPosition // center is standard Compose center
+                center = center + knobPosition
             )
         }
     }
