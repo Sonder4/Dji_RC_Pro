@@ -45,9 +45,6 @@ class BleManager private constructor(context: Context) {
         private const val WRITE_QUEUE_MAX_SIZE = 1000
         private const val MAX_WRITE_ATTEMPTS = 3
 
-        // Target device MAC address
-        const val TARGET_MAC_ADDRESS = "10:5F:AD:63:70:17"
-
         // Connection parameters for stability
         private const val CONNECTION_PRIORITY_HIGH = 1
         private const val MTU_SIZE = 185
@@ -236,16 +233,14 @@ class BleManager private constructor(context: Context) {
                 val isRos2Gateway = advertisedServices.any { it.uuid == Ros2BleProfile.SERVICE_UUID } ||
                     Ros2BleProfile.matchesGatewayName(name)
 
-                val isTargetDevice = address.equals(TARGET_MAC_ADDRESS, ignoreCase = true)
                 val logMessage = when {
                     isRos2Gateway -> "ROS2 gateway found - Name: $name, RSSI: ${rssi}dBm (${getRssiDescription(rssi)})"
-                    isTargetDevice -> "TARGET DEVICE FOUND - Name: $name, RSSI: ${rssi}dBm (${getRssiDescription(rssi)})"
                     else -> "Device found - Name: $name, RSSI: ${rssi}dBm"
                 }
                 dataLogManager?.logBleScan(
                     message = logMessage,
                     macAddress = address,
-                    level = if (isRos2Gateway || isTargetDevice) LogLevel.INFO else LogLevel.DEBUG
+                    level = if (isRos2Gateway) LogLevel.INFO else LogLevel.DEBUG
                 )
 
                 val currentList = _scanResults.value.toMutableList()
