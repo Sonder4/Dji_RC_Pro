@@ -146,7 +146,7 @@ Android 使用 `DataStore` 持久化以下配置：
 | `transport_mode` | 传输模式 | `udp_only` |
 | `connection_mode` | 连接模式 | `auto_pair` |
 | `pair_code` | 配对短码 | `NCURC2026` |
-| `target_ip` | 手动目标地址 | `192.168.1.83` |
+| `target_ip` | 手动目标地址 | `198.51.100.83` |
 | `target_port` | 手动目标端口 | `1387` |
 | `forget_pairing` | 清理已有配对 | `true` |
 | `start_primary` | 启动后立即拉起主链路 | `true` |

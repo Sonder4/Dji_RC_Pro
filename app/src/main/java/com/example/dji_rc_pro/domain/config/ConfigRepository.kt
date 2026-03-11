@@ -47,7 +47,7 @@ class ConfigRepository private constructor(context: Context) {
     }
 
     val targetIp: Flow<String> = dataStore.data.map { prefs ->
-        prefs[KEY_TARGET_IP] ?: "192.168.1.83"
+        prefs[KEY_TARGET_IP] ?: "198.51.100.83"
     }
 
     val targetPort: Flow<Int> = dataStore.data.map { prefs ->

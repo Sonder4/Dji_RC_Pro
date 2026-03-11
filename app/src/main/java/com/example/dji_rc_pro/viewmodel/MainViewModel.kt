@@ -351,7 +351,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val targets = linkedSetOf<String>()
         pairedHostAddress.value?.takeIf { it.isNotBlank() }?.let { targets += it }
         effectiveTargetIp()
-            .takeIf { it.isNotBlank() && it != "192.168.1.83" }
+            .takeIf { it.isNotBlank() && it != "198.51.100.83" }
             ?.let { targets += it }
         return targets
     }
@@ -709,7 +709,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Config
     val targetIp: StateFlow<String> = configRepository.targetIp
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "192.168.1.83")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "198.51.100.83")
 
     val targetPort: StateFlow<Int> = configRepository.targetPort
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1387)

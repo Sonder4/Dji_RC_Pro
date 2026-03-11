@@ -63,19 +63,19 @@ class WifiDiscoveryUnitTest {
             lease_ms=$leaseMs
             ready=1
             busy=0
-            ipv4=192.168.10.2
-            ipv6=240e::2026
+            ipv4=198.51.100.2
+            ipv6=2001:db8::2026
             proof=$proof
 
         """.trimIndent()
 
-        val host = DiscoveryProtocol.parseOffer(payload, "240e::2026", probeState)
+        val host = DiscoveryProtocol.parseOffer(payload, "2001:db8::2026", probeState)
 
         assertNotNull(host)
         assertEquals(hostId, host!!.hostId)
         assertEquals("Alpha", host.hostName)
-        assertEquals("192.168.10.2", host.ipv4Address)
-        assertEquals("240e::2026", host.ipv6Address)
+        assertEquals("198.51.100.2", host.ipv4Address)
+        assertEquals("2001:db8::2026", host.ipv6Address)
         assertEquals(DiscoveryProtocol.AddressFamily.IPV6, host.selectedFamily)
         assertTrue(host.ready)
         assertTrue(!host.busy)
@@ -105,7 +105,7 @@ class WifiDiscoveryUnitTest {
 
         """.trimIndent()
 
-        val host = DiscoveryProtocol.parseOffer(payload, "192.168.10.2", probeState)
+        val host = DiscoveryProtocol.parseOffer(payload, "198.51.100.2", probeState)
 
         assertNull(host)
     }
@@ -120,7 +120,7 @@ class WifiDiscoveryUnitTest {
         val host = discoveredHost(
             hostId = "host-alpha",
             hostName = "Alpha",
-            ipv4 = "192.168.10.2",
+            ipv4 = "198.51.100.2",
             ipv6 = null,
             selectedFamily = DiscoveryProtocol.AddressFamily.IPV4,
             hostNonce = "host-nonce-1"
@@ -140,14 +140,14 @@ class WifiDiscoveryUnitTest {
         val hostA = discoveredHost(
             hostId = "host-a",
             hostName = "Alpha",
-            ipv4 = "192.168.10.11",
+            ipv4 = "198.51.100.11",
             ipv6 = null,
             selectedFamily = DiscoveryProtocol.AddressFamily.IPV4
         )
         val hostB = discoveredHost(
             hostId = "host-b",
             hostName = "Beta",
-            ipv4 = "192.168.10.12",
+            ipv4 = "198.51.100.12",
             ipv6 = null,
             selectedFamily = DiscoveryProtocol.AddressFamily.IPV4
         )
@@ -163,7 +163,7 @@ class WifiDiscoveryUnitTest {
         val host = discoveredHost(
             hostId = "host-a",
             hostName = "Alpha",
-            ipv4 = "192.168.10.11",
+            ipv4 = "198.51.100.11",
             ipv6 = null,
             selectedFamily = DiscoveryProtocol.AddressFamily.IPV4
         )
@@ -180,14 +180,14 @@ class WifiDiscoveryUnitTest {
             discoveredHost(
                 hostId = "host-a",
                 hostName = "Alpha",
-                ipv4 = "192.168.10.11",
+                ipv4 = "198.51.100.11",
                 ipv6 = null,
                 selectedFamily = DiscoveryProtocol.AddressFamily.IPV4
             ),
             discoveredHost(
                 hostId = "host-b",
                 hostName = "Beta",
-                ipv4 = "192.168.10.12",
+                ipv4 = "198.51.100.12",
                 ipv6 = null,
                 selectedFamily = DiscoveryProtocol.AddressFamily.IPV4
             )

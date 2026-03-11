@@ -21,7 +21,7 @@ class UdpProtocolUnitTest {
     @Test
     fun `normalize target address trims ipv6 brackets`() {
         assertEquals("2001:db8::1", UdpEndpointConfig.normalizeTargetAddress(" [2001:db8::1] "))
-        assertEquals("192.168.1.10", UdpEndpointConfig.normalizeTargetAddress(" 192.168.1.10 "))
+        assertEquals("198.51.100.10", UdpEndpointConfig.normalizeTargetAddress(" 198.51.100.10 "))
     }
 
     @Test
@@ -45,7 +45,7 @@ class UdpProtocolUnitTest {
 
     @Test
     fun `wildcard bind address matches family`() {
-        val ipv4Bind = UdpEndpointConfig.getWildcardBindAddress(UdpEndpointConfig.resolveAddress("192.168.1.10"))
+        val ipv4Bind = UdpEndpointConfig.getWildcardBindAddress(UdpEndpointConfig.resolveAddress("198.51.100.10"))
         val ipv6Bind = UdpEndpointConfig.getWildcardBindAddress(UdpEndpointConfig.resolveAddress("2001:db8::1"))
 
         assertEquals("0.0.0.0", ipv4Bind.hostAddress)
