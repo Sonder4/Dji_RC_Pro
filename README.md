@@ -193,6 +193,14 @@ source ros2_ws_dji_rc_pro/install/setup.bash
 ros2 topic echo /dji_rc_pro_bridge/transport_status
 ```
 
+## 文档导航
+
+- [TRANSPORT.md](./TRANSPORT.md) : BLE、UDP 点对点链路、`ble_udp` 切换逻辑
+- [PROTOCOL.md](./PROTOCOL.md) : Wi-Fi 发现配对、BLE 紧凑配对协议、控制帧格式
+- [UI_SETTINGS.md](./UI_SETTINGS.md) : 主界面抽屉、设置项、保存与校验行为
+- [KEY_MAPPING.md](./KEY_MAPPING.md) : 实体摇杆、滚轮、五向键和虚拟按钮映射
+- [ARCHITECTURE.md](./ARCHITECTURE.md) : 原理说明、代码入口与 Android/ROS2 侧模块划分
+
 ## 依赖清单
 
 完整依赖见：
