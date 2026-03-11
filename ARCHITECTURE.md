@@ -20,7 +20,7 @@
 ### 入口
 
 - `app/src/main/java/com/example/dji_rc_pro/MainActivity.kt`
-- `app/src/main/java/com/example/dji_rc_pro/NCUApplication.kt`
+- `app/src/main/java/com/example/dji_rc_pro/RcProApplication.kt`
 
 ### UI
 
@@ -79,7 +79,7 @@
 
 主要职责：
 
-- 扫描并连接 `RC26-ROS2*`
+- 扫描并连接 `RCBridge-ROS2*`
 - 维护 BLE 会话状态
 - 在 UDP 未就绪时发送 BLE 控制帧
 

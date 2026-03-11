@@ -21,7 +21,7 @@
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
 
     <application
-        android:name=".NCUApplication"
+        android:name=".RcProApplication"
         android:allowBackup="true"
         android:extractNativeLibs="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

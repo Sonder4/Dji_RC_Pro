@@ -4,7 +4,7 @@
   <name>dji_rc_pro_bridge</name>
   <version>1.0.0</version>
   <description>Standalone ROS2 bridge for DJI RC Pro UDP discovery, pairing, and control ingest.</description>
-  <maintainer email="opensource@example.invalid">NCU RC Pro Contributors</maintainer>
+  <maintainer email="opensource@example.invalid">RC Pro Bridge Contributors</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

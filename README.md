@@ -109,7 +109,7 @@ TRANSPORT_MODE=udp_only ./scripts/run_dji_rc_pro_gateway.sh
 adb shell am start -W -S -n com.example.dji_rc_pro/.MainActivity \
   --es transport_mode ble_udp \
   --es connection_mode auto_pair \
-  --es pair_code NCURC2026 \
+  --es pair_code CHANGE_ME_PAIR_CODE \
   --ez forget_pairing true \
   --ez start_primary true
 ```
@@ -135,7 +135,7 @@ Android 使用 `DataStore` 持久化以下配置：
 - `connection_mode = auto_pair`
 - `target_port = 1387`
 - `local_port = 1346`
-- `pair_code = NCURC2026`
+- `pair_code = CHANGE_ME_PAIR_CODE`
 
 ### Debug 启动参数
 
@@ -145,7 +145,7 @@ Android 使用 `DataStore` 持久化以下配置：
 |---|---|---|
 | `transport_mode` | 传输模式 | `udp_only` |
 | `connection_mode` | 连接模式 | `auto_pair` |
-| `pair_code` | 配对短码 | `NCURC2026` |
+| `pair_code` | 配对短码 | `CHANGE_ME_PAIR_CODE` |
 | `target_ip` | 手动目标地址 | `198.51.100.83` |
 | `target_port` | 手动目标端口 | `1387` |
 | `forget_pairing` | 清理已有配对 | `true` |
@@ -157,7 +157,7 @@ Android 使用 `DataStore` 持久化以下配置：
 
 | 变量 | 默认值 | 用途 |
 |---|---|---|
-| `PAIR_CODE` | `NCURC2026` | 配对短码 |
+| `PAIR_CODE` | `CHANGE_ME_PAIR_CODE` | 配对短码 |
 | `TRANSPORT_MODE` | `udp_only` | 当前通信模式 |
 | `CMD_VEL_TOPIC` | `/dji_rc_pro_bridge/cmd_vel` | 速度话题 |
 | `RAW_TOPIC` | `/dji_rc_pro_bridge/chassis_ctrl_raw` | 原始协议话题 |

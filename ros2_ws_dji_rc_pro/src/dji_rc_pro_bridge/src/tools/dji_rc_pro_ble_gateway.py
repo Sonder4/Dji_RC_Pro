@@ -30,11 +30,11 @@ GATT_SERVICE_IFACE = 'org.bluez.GattService1'
 GATT_CHRC_IFACE = 'org.bluez.GattCharacteristic1'
 LE_ADVERTISEMENT_IFACE = 'org.bluez.LEAdvertisement1'
 
-PROTOCOL_VERSION = 'RC26_DISCOVERY/2'
-DEFAULT_PAIR_CODE = 'NCURC2026'
+PROTOCOL_VERSION = 'RCBRIDGE_DISCOVERY/2'
+DEFAULT_PAIR_CODE = 'CHANGE_ME_PAIR_CODE'
 DEFAULT_CONTROL_PORT = 1387
 DEFAULT_LEASE_MS = 5000
-DEVICE_NAME_PREFIX = 'RC26-ROS2'
+DEVICE_NAME_PREFIX = 'RCBridge-ROS2'
 
 SERVICE_UUID = '8f231100-6e52-4f7c-9b16-1b20c1a50001'
 PAIR_CONTROL_UUID = '8f231100-6e52-4f7c-9b16-1b20c1a50002'
@@ -367,10 +367,10 @@ def derive_host_id(host_name: str) -> str:
         with open('/etc/machine-id', 'r', encoding='utf-8') as handle:
             machine_id = handle.readline().strip()
         if machine_id:
-            return f'rc26-{hashlib.sha256(machine_id.encode("utf-8")).hexdigest()[:16]}'
+            return f'rcbridge-{hashlib.sha256(machine_id.encode("utf-8")).hexdigest()[:16]}'
     except Exception:
         pass
-    return f'rc26-{hashlib.sha256(host_name.encode("utf-8")).hexdigest()[:16]}'
+    return f'rcbridge-{hashlib.sha256(host_name.encode("utf-8")).hexdigest()[:16]}'
 
 
 def find_adapter(bus) -> str:
@@ -417,10 +417,10 @@ def collect_host_addresses() -> Tuple[Optional[str], Optional[str]]:
 class Ros2BleGatewayNode(Node):
     def __init__(self):
         super().__init__('dji_rc_pro_ble_gateway')
-        host_name_default = socket.gethostname()
+        host_name_default = 'ros2-gateway'
         host_name = self.declare_parameter('host_name', host_name_default).value or host_name_default
         host_id = self.declare_parameter('host_id', '').value or derive_host_id(host_name)
-        advertise_name_default = f'{DEVICE_NAME_PREFIX}-{host_name[:12]}'
+        advertise_name_default = f'{DEVICE_NAME_PREFIX}-{host_id.split("-", 1)[-1][:6]}'
         advertise_name = self.declare_parameter('advertise_name', advertise_name_default).value or advertise_name_default
 
         self.host_name = host_name
@@ -761,7 +761,7 @@ class Ros2BleGatewayNode(Node):
         if self.transport_mode == TRANSPORT_MODE_BLE_ONLY:
             self._authorize_ble_only_client(
                 client_id=client_id,
-                client_name='DJI_RC_Pro',
+                client_name='RCBridge_Controller',
                 client_nonce=client_nonce,
                 support_ipv4=support_ipv4,
                 support_ipv6=support_ipv6,
@@ -853,7 +853,7 @@ class Ros2BleGatewayNode(Node):
         family_wire = compact_family_to_wire(selected_family)
         self.lease = LeaseState(
             client_id=client_id,
-            client_name='DJI_RC_Pro',
+            client_name='RCBridge_Controller',
             client_nonce=client_nonce,
             session_id=session_id,
             selected_family=selected_family,
@@ -910,7 +910,7 @@ class Ros2BleGatewayNode(Node):
 
     def _handle_probe(self, fields: Dict[str, str]) -> Optional[bytes]:
         client_id = fields.get('client_id', '')
-        client_name = fields.get('client_name', 'DJI_RC_Pro')
+        client_name = fields.get('client_name', 'RCBridge_Controller')
         client_nonce = fields.get('client_nonce', '')
         proof = fields.get('proof', '')
         support_ipv4 = fields.get('support_ipv4', '1') == '1'
@@ -975,7 +975,7 @@ class Ros2BleGatewayNode(Node):
 
     def _handle_pair_request(self, fields: Dict[str, str]) -> Optional[bytes]:
         client_id = fields.get('client_id', '')
-        client_name = fields.get('client_name', 'DJI_RC_Pro')
+        client_name = fields.get('client_name', 'RCBridge_Controller')
         client_nonce = fields.get('client_nonce', '')
         host_id = fields.get('host_id', '')
         host_nonce = fields.get('host_nonce', '')

@@ -6,7 +6,8 @@ WS_DIR="$ROOT_DIR/ros2_ws_dji_rc_pro"
 LOG_DIR="$ROOT_DIR/logs/ros2"
 TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
 LOG_FILE="$LOG_DIR/dji_rc_pro_gateway_${TIMESTAMP}.log"
-PAIR_CODE="${PAIR_CODE:-NCURC2026}"
+PAIR_CODE="${PAIR_CODE:-CHANGE_ME_PAIR_CODE}"
+HOST_NAME="${HOST_NAME:-ros2-gateway}"
 TRANSPORT_MODE="${TRANSPORT_MODE:-udp_only}"
 CMD_VEL_TOPIC="${CMD_VEL_TOPIC:-/dji_rc_pro_bridge/cmd_vel}"
 RAW_TOPIC="${RAW_TOPIC:-/dji_rc_pro_bridge/chassis_ctrl_raw}"
@@ -31,7 +32,7 @@ echo "Launch file: $LAUNCH_FILE"
 ros2 launch dji_rc_pro_bridge "$LAUNCH_FILE" \
   pair_code:="$PAIR_CODE" \
   transport_mode:="$TRANSPORT_MODE" \
-  host_name:="$(hostname)" \
+  host_name:="$HOST_NAME" \
   cmd_vel_topic:="$CMD_VEL_TOPIC" \
   raw_topic:="$RAW_TOPIC" \
   status_topic:="$STATUS_TOPIC" 2>&1 | tee "$LOG_FILE"

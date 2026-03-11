@@ -1205,7 +1205,7 @@ private fun BleDevicesPanelContent(
                 supporting = if (isBleScanning) {
                     "The scan is running. Nearby ROS2 gateways will appear here."
                 } else {
-                    "Start a BLE scan to discover RC26-ROS2 devices."
+                    "Start a BLE scan to discover RCBridge-ROS2 devices."
                 }
             )
         } else {

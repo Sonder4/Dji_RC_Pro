@@ -39,9 +39,9 @@
 
 namespace {
 
-constexpr const char* kProtocolVersion = "RC26_DISCOVERY/2";
+constexpr const char* kProtocolVersion = "RCBRIDGE_DISCOVERY/2";
 constexpr const char* kDefaultDiscoveryGroup = "ff12::2026";
-constexpr const char* kDefaultPairCode = "NCURC2026";
+constexpr const char* kDefaultPairCode = "CHANGE_ME_PAIR_CODE";
 constexpr int kDefaultControlPort = 1387;
 constexpr int kDefaultDiscoveryPort = 1388;
 constexpr int kDefaultAnnounceIntervalMs = 1000;
@@ -168,11 +168,7 @@ std::string PeerAddressToString(const sockaddr_storage& peer) {
 }
 
 std::string DefaultHostName() {
-  char hostname[256] = {0};
-  if (::gethostname(hostname, sizeof(hostname) - 1) == 0) {
-    return hostname;
-  }
-  return "rc26-host";
+  return "ros2-gateway";
 }
 
 std::string ReadFirstLine(const char* path) {
@@ -188,9 +184,9 @@ std::string ReadFirstLine(const char* path) {
 std::string DeriveStableHostId(const std::string& host_name) {
   const std::string machine_id = ReadFirstLine("/etc/machine-id");
   if (!machine_id.empty()) {
-    return "rc26-" + Sha256Hex(machine_id).substr(0, 16);
+    return "rcbridge-" + Sha256Hex(machine_id).substr(0, 16);
   }
-  return "rc26-" + Sha256Hex(host_name).substr(0, 16);
+  return "rcbridge-" + Sha256Hex(host_name).substr(0, 16);
 }
 
 std::vector<InterfaceInfo> EnumerateIpv6MulticastInterfaces() {
@@ -655,7 +651,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
 
     const std::string client_id = client_id_it->second;
     const std::string client_nonce = client_nonce_it->second;
-    const std::string client_name = fields.count("client_name") ? fields.at("client_name") : "DJI_RC_Pro";
+    const std::string client_name = fields.count("client_name") ? fields.at("client_name") : "RCBridge_Controller";
     const std::string expected_proof = HmacSha256Hex(
         pair_code_,
         JoinSignature({"probe", kProtocolVersion, client_id, client_nonce, client_name}));
@@ -732,7 +728,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
 
     const std::string client_id = client_id_it->second;
     const std::string client_nonce = client_nonce_it->second;
-    const std::string client_name = fields.count("client_name") ? fields.at("client_name") : "DJI_RC_Pro";
+    const std::string client_name = fields.count("client_name") ? fields.at("client_name") : "RCBridge_Controller";
     const std::string client_address = PeerAddressToString(peer);
     const std::string expected_proof = HmacSha256Hex(
         pair_code_,

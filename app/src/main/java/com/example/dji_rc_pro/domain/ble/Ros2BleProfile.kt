@@ -9,7 +9,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 object Ros2BleProfile {
-    const val DEVICE_NAME_PREFIX = "RC26-ROS2"
+    const val DEVICE_NAME_PREFIX = "RCBridge-ROS2"
 
     private const val COMPACT_VERSION = "1"
     private const val PROOF_LENGTH_BYTES = 16

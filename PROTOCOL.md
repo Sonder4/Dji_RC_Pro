@@ -6,11 +6,11 @@
 
 ### 基本参数
 
-- 协议版本：`RC26_DISCOVERY/2`
+- 协议版本：`RCBRIDGE_DISCOVERY/2`
 - 组播地址：`ff12::2026`
 - 发现端口：`1388`
 - 默认控制端口：`1387`
-- 默认短码：`NCURC2026`
+- 默认短码：`CHANGE_ME_PAIR_CODE`
 
 消息格式是 UTF-8 文本，按 `key=value` 逐行编码，末尾空行结束。
 

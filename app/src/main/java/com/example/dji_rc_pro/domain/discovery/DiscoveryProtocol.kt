@@ -5,12 +5,12 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 object DiscoveryProtocol {
-    const val PROTOCOL_VERSION = "RC26_DISCOVERY/2"
+    const val PROTOCOL_VERSION = "RCBRIDGE_DISCOVERY/2"
     const val DEFAULT_DISCOVERY_GROUP = "ff12::2026"
     const val DEFAULT_DISCOVERY_PORT = 1388
     const val DEFAULT_CONTROL_PORT = 1387
-    const val DEFAULT_PAIR_CODE = "NCURC2026"
-    const val CLIENT_NAME = "DJI_RC_Pro"
+    const val DEFAULT_PAIR_CODE = "CHANGE_ME_PAIR_CODE"
+    const val CLIENT_NAME = "RCBridge_Controller"
 
     enum class AddressFamily(val wireValue: String) {
         IPV4("ipv4"),

@@ -5,7 +5,7 @@ import android.content.Context
 import com.example.dji_rc_pro.domain.config.ConfigRepository
 import timber.log.Timber
 
-class NCUApplication : Application() {
+class RcProApplication : Application() {
     override fun attachBaseContext(base: Context?) {
         super.attachBaseContext(base)
     }

@@ -8,7 +8,7 @@ def generate_launch_description():
     control_port_arg = DeclareLaunchArgument('control_port', default_value='1387')
     discovery_port_arg = DeclareLaunchArgument('discovery_port', default_value='1388')
     discovery_group_arg = DeclareLaunchArgument('discovery_group', default_value='ff12::2026')
-    pair_code_arg = DeclareLaunchArgument('pair_code', default_value='NCURC2026')
+    pair_code_arg = DeclareLaunchArgument('pair_code', default_value='CHANGE_ME_PAIR_CODE')
     transport_mode_arg = DeclareLaunchArgument('transport_mode', default_value='udp_only')
     lease_ms_arg = DeclareLaunchArgument('lease_ms', default_value='5000')
     require_ready_arg = DeclareLaunchArgument('require_ready_for_pairing', default_value='false')
