@@ -1,5 +1,7 @@
 pluginManagement {
     repositories {
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -19,7 +21,12 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://developer.dji.com/api/m2/android/maven") }
-        maven { url = uri("E:/Desktop/app/Dji_RC_Pro/rustdesk/flutter_module/build/host/outputs/repo") }
+        // Optional local Flutter AAR repo; only add when present to avoid invalid
+        // Windows-only URI scheme errors on Linux/macOS.
+        val localFlutterRepo = file("${rootDir}/rustdesk/flutter_module/build/host/outputs/repo")
+        if (localFlutterRepo.exists()) {
+            maven { url = localFlutterRepo.toURI() }
+        }
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
         maven { url = uri("https://jitpack.io") }
     }

@@ -11,6 +11,10 @@
 - **Note**: Integration design finalized. Rules and workflow defined in `vibecoding.md`.
 
 ## Recent Changes
+- **Deployment** (2026-02-07):
+  - **APK安装**: 成功使用ADB安装 `app-release.apk` 到设备 `4QQZLC700522QY`
+  - **包名验证**: `com.example.dji_rc_pro` 已安装到设备
+  - **ADB命令**: `adb install -r app-release.apk` 执行成功
 - **Docs**: 
   - Created `docs/02_Architecture/DESIGN_RustDesk_Integration.md` defining the integration architecture and API.
   - Updated `.trae/rules/vibecoding.md` with "RustDesk Integration Workflow".

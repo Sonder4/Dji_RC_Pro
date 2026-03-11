@@ -1,1 +1,307 @@
+# DJI RC Pro - 项目环境依赖与组件说明
+# Project Environment Dependencies and Components
+# Last Updated: 2026-02-02
 
+================================================================================
+                              开发环境要求
+================================================================================
+
+## 1. 基础开发环境
+- Android Studio: Hedgehog (2023.1.1) 或更高版本
+- JDK: Java 8 (JDK 1.8) 或更高版本
+- Kotlin: 2.1.0
+- Android Gradle Plugin (AGP): 8.6.0
+- Gradle: 8.7
+
+## 2. Android SDK 要求
+- Compile SDK: 35 (Android 15)
+- Min SDK: 29 (Android 10)
+- Target SDK: 33 (Android 13)
+- NDK: 支持 arm64-v8a 架构
+
+================================================================================
+                              项目依赖库
+================================================================================
+
+## 核心框架 (Core Framework)
+
+### AndroidX 基础组件
+- androidx.core:core-ktx:1.10.1
+  - Android核心扩展库，提供Kotlin友好的API
+
+- androidx.lifecycle:lifecycle-runtime-ktx:2.6.1
+  - 生命周期管理组件，支持协程
+
+- androidx.activity:activity-compose:1.8.0
+  - Compose Activity支持
+
+### Jetpack Compose UI 框架
+- androidx.compose:compose-bom:2024.04.01
+  - Compose物料清单，统一管理Compose版本
+
+- androidx.compose.ui:ui
+  - Compose UI核心库
+
+- androidx.compose.ui:ui-graphics
+  - Compose图形绘制支持
+
+- androidx.compose.ui:ui-tooling / ui-tooling-preview
+  - Compose开发工具，预览支持
+
+- androidx.compose.material3:material3
+  - Material Design 3 组件库
+
+### 数据存储
+- androidx.datastore:datastore-preferences:1.0.0
+  - Jetpack DataStore，用于应用配置存储
+  - 替代SharedPreferences的现代化方案
+
+### 协程支持
+- org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3
+  - Kotlin协程Android支持
+  - 用于异步操作和后台任务
+
+## 第三方库 (Third-party Libraries)
+
+### USB串口通信
+- com.github.mik3y:usb-serial-for-android:3.7.0
+  - USB串口通信库
+  - 用于连接USB HID设备（摇杆/手柄）
+  - GitHub: https://github.com/mik3y/usb-serial-for-android
+
+### 日志框架
+- com.jakewharton.timber:timber:5.0.1
+  - 日志记录框架
+  - 替代Android原生Log，支持自定义日志树
+
+================================================================================
+                              系统权限要求
+================================================================================
+
+## 蓝牙权限 (Bluetooth Permissions)
+- android.permission.BLUETOOTH
+  - 基础蓝牙操作权限
+
+- android.permission.BLUETOOTH_ADMIN
+  - 蓝牙管理权限（扫描、配对等）
+
+- android.permission.BLUETOOTH_SCAN
+  - Android 12+ 蓝牙扫描权限
+
+- android.permission.BLUETOOTH_CONNECT
+  - Android 12+ 蓝牙连接权限
+
+## 位置权限 (Location Permissions)
+- android.permission.ACCESS_FINE_LOCATION
+  - 精确位置访问（蓝牙扫描需要）
+
+- android.permission.ACCESS_COARSE_LOCATION
+  - 粗略位置访问
+
+## 网络权限 (Network Permissions)
+- android.permission.INTERNET
+  - 网络访问权限
+
+- android.permission.ACCESS_NETWORK_STATE
+  - 网络状态查询
+
+- android.permission.ACCESS_WIFI_STATE
+  - WiFi状态查询
+
+- android.permission.CHANGE_WIFI_STATE
+  - WiFi状态修改
+
+## 其他权限
+- android.permission.READ_PHONE_STATE
+  - 读取设备状态
+
+- android.permission.USB_PERMISSION
+  - USB设备访问权限
+
+## 硬件特性要求
+- android.hardware.usb.host (optional)
+  - USB主机模式支持（可选）
+
+- android.hardware.bluetooth (required)
+  - 蓝牙硬件支持（必需）
+
+================================================================================
+                              核心功能组件
+================================================================================
+
+## 1. 传输服务组件 (Transmission Services)
+
+### UdpService
+- 文件路径: service/UdpService.kt
+- 功能: UDP数据传输服务
+- 频率: 50Hz控制包发送
+- 端口: 本地1346，目标1387
+
+### BleService
+- 文件路径: service/BleService.kt
+- 功能: BLE蓝牙传输服务
+- 频率: 50Hz控制包发送
+- UUID: Nordic UART Service (6E400001-B5A3-F393-E0A9-E50E24DCCA9E)
+
+## 2. 连接管理组件 (Connection Management)
+
+### ConnectionManager
+- 文件路径: manager/ConnectionManager.kt
+- 功能: 统一管理UDP和BLE连接状态
+- 职责: 连接状态监控、错误处理、事件分发
+
+### BleManager
+- 文件路径: domain/ble/BleManager.kt
+- 功能: BLE核心管理类
+- 职责: 设备扫描、GATT连接、数据传输、信号强度监控
+- 特性: 自动配对、连接重试、详细日志记录
+
+### DataLogManager (新增)
+- 文件路径: manager/DataLogManager.kt
+- 功能: 统一数据日志管理
+- 职责: 记录UDP和BLE的收发数据、调试日志
+
+## 3. 心跳与重连组件 (Heartbeat & Reconnect)
+
+### HeartbeatManager
+- 文件路径: manager/HeartbeatManager.kt
+- 功能: 心跳检测管理
+- 职责: 双通道心跳监控、超时检测
+
+### ReconnectManager
+- 文件路径: manager/ReconnectManager.kt
+- 功能: 自动重连管理
+- 职责: 连接断开后自动重连
+
+## 4. 输入处理组件 (Input Processing)
+
+### ControllerManager
+- 文件路径: domain/input/ControllerManager.kt
+- 功能: 控制器状态管理
+- 职责: 摇杆数据、按键状态管理
+
+### StickTransformer
+- 文件路径: domain/input/StickTransformer.kt
+- 功能: 摇杆数据转换
+- 职责: 浮点值到字节值的转换
+
+### UsbHidManager
+- 文件路径: domain/usb/UsbHidManager.kt
+- 功能: USB HID设备管理
+- 职责: USB设备检测、权限管理、数据读取
+
+## 5. UI组件 (UI Components)
+
+### MainScreen
+- 文件路径: ui/MainScreen.kt
+- 功能: 主界面
+- 包含: 虚拟摇杆、BLE扫描对话框、数据日志对话框
+
+### DataLogDialog (新增)
+- 功能: 统一数据日志显示
+- 支持: UDP和BLE数据筛选、调试日志显示
+
+### VirtualStickView
+- 文件路径: ui/components/VirtualStickView.kt
+- 功能: 虚拟摇杆控件
+
+## 6. 配置与存储 (Configuration)
+
+### ConfigRepository
+- 文件路径: domain/config/ConfigRepository.kt
+- 功能: 应用配置管理
+- 存储: DataStore Preferences
+- 配置项: 目标IP、端口、本地端口
+
+## 7. 工具类 (Utilities)
+
+### LogUtil
+- 文件路径: util/LogUtil.kt
+- 功能: 日志工具类
+
+### NetworkUtil
+- 文件路径: util/NetworkUtil.kt
+- 功能: 网络工具类
+
+### PingUtil
+- 文件路径: util/PingUtil.kt
+- 功能: Ping测试工具
+
+### LogExportUtil
+- 文件路径: util/LogExportUtil.kt
+- 功能: 日志导出工具
+
+================================================================================
+                              数据模型
+================================================================================
+
+## 新增数据模型 (New Data Models)
+
+### DataLog
+- 文件路径: domain/model/DataLog.kt
+- 用途: 统一数据日志模型
+- 支持: UDP/BLE传输类型、多种日志级别
+
+### UdpDataLog (原有)
+- 文件路径: domain/model/UdpDataLog.kt
+- 用途: UDP数据日志（已废弃，使用DataLog替代）
+
+### ConnectionState
+- 文件路径: util/ConnectionState.kt
+- 用途: 连接状态数据类
+
+### ErrorCode
+- 文件路径: util/ErrorCode.kt
+- 用途: 错误码枚举定义
+
+================================================================================
+                              BLE服务UUID
+================================================================================
+
+## Nordic UART Service (BLE串口服务)
+- Service UUID: 6E400001-B5A3-F393-E0A9-E50E24DCCA9E
+- RX Characteristic UUID: 6E400002-B5A3-F393-E0A9-E50E24DCCA9E (写入)
+- TX Characteristic UUID: 6E400003-B5A3-F393-E0A9-E50E24DCCA9E (通知)
+
+## 目标设备MAC地址
+- 默认目标: 10:5F:AD:63:70:17
+
+================================================================================
+                              构建设置
+================================================================================
+
+## 构建类型
+- Debug: 调试版本，无代码混淆
+- Release: 发布版本（待配置ProGuard）
+
+## 代码特性
+- multiDexEnabled: true
+- Compose编译器: 启用
+- 矢量图支持: 启用
+
+## 支持的ABI
+- arm64-v8a (64位ARM)
+
+================================================================================
+                              版本历史
+================================================================================
+
+## v1.0 (当前版本)
+- 基础UDP传输功能
+- BLE蓝牙串口支持
+- USB HID摇杆输入
+- 虚拟摇杆控制
+- 统一数据日志系统（新增）
+- 详细BLE调试日志（新增）
+
+================================================================================
+                              注意事项
+================================================================================
+
+1. Android 12+ (API 31+) 需要动态申请蓝牙权限
+2. 蓝牙扫描需要位置权限（即使不获取位置信息）
+3. USB设备需要用户授权后才能访问
+4. 目标设备10:5F:AD:63:70:17需要支持Nordic UART Service
+5. 建议使用Android 10+设备以获得最佳兼容性
+
+================================================================================
