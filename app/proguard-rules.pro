@@ -1,0 +1,3 @@
+-keep class dji.v5.** { *; }
+-keep class dji.sdk.keyvalue.** { *; }
+-keep class com.secneo.sdk.** { *; }

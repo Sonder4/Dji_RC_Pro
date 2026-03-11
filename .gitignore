@@ -1,0 +1,46 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Internal collaboration / agent folders
+.claude/
+.codex/
+.trae/
+AGENTS.md
+CLAUDE.md
+prompts/
+plan/
+plans/
+spec/
+specs/
+
+# Docs and logs not intended for public release
+Docs/
+logs/
+ErrorHistory/
+MemoryContext/
+*.log
+
+# Android local / generated artifacts
+local.properties
+app/build/
+*.apk
+*.aab
+
+# Gradle / Kotlin caches
+.gradle/
+.kotlin/
+
+# ROS2 generated directories
+ros2_ws_dji_rc_pro/build/
+ros2_ws_dji_rc_pro/install/
+ros2_ws_dji_rc_pro/log/
+
+# Python
+**/__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
