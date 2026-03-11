@@ -7,20 +7,6 @@
 
 `DJI RC Pro ROS2 Bridge` 是一个运行在 DJI RC Pro 上的 Android 控制端，配套一个独立的 ROS2 工作空间，用于通过 `UDP`、`BLE`、`BLE + UDP` 三种模式将摇杆与按键控制数据发送到机器人侧 ROS2 节点。
 
-这个公开仓库只保留运行与构建所需内容：
-
-- Android App 源码与 Gradle 配置
-- ROS2 bridge 源码与 launch 文件
-- 运行脚本
-- 发布版 `README`、依赖清单、许可证
-
-这个公开仓库**不包含**以下内容：
-
-- 内部协作目录：`.claude/`、`.codex/`、`.trae/`
-- 设计与过程文档：`Docs/`、`plan/`、`spec/`、`prompts/`
-- 日志与调试记录：`logs/`、`ErrorHistory/`
-- 本地配置与生成物：`local.properties`、`*.apk`、`app/build/`、`ros2_ws_dji_rc_pro/build|install|log/`
-
 ## 功能概览
 
 - 三种传输模式：
