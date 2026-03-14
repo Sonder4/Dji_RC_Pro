@@ -51,11 +51,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.dji_rc_pro.domain.config.ConnectionMode
 import com.example.dji_rc_pro.domain.config.TransportIsolationMode
+import com.example.dji_rc_pro.domain.diagnostics.PingSlot
 import com.example.dji_rc_pro.domain.discovery.DiscoveryProtocol
 import com.example.dji_rc_pro.domain.model.TransportType
 import com.example.dji_rc_pro.ui.components.ErrorDialog
 import com.example.dji_rc_pro.ui.components.FrequencyDialog
 import com.example.dji_rc_pro.ui.components.VirtualStick
+import com.example.dji_rc_pro.util.PingUtil
 import com.example.dji_rc_pro.viewmodel.MainViewModel
 
 private val DeckPanelShape = RoundedCornerShape(28.dp)
@@ -63,9 +65,46 @@ private val DeckButtonShape = RoundedCornerShape(22.dp)
 private val DeckChipShape = RoundedCornerShape(18.dp)
 
 private enum class CockpitDrawerPanel(val label: String) {
-    CONNECTION("Connection"),
+    CONNECTION("连接"),
     BLE("BLE"),
-    LOGS("Data Logs")
+    LOGS("日志")
+}
+
+private fun transportModeLabel(mode: TransportIsolationMode): String = when (mode) {
+    TransportIsolationMode.UDP_ONLY -> "UDP"
+    TransportIsolationMode.BLE_ONLY -> "BLE"
+    TransportIsolationMode.BLE_UDP -> "BLE + UDP"
+}
+
+private fun transportModeSupportLabel(mode: TransportIsolationMode): String = when (mode) {
+    TransportIsolationMode.UDP_ONLY -> "仅 UDP"
+    TransportIsolationMode.BLE_ONLY -> "仅 BLE"
+    TransportIsolationMode.BLE_UDP -> "自动回退"
+}
+
+private fun transportModeDescription(mode: TransportIsolationMode): String = when (mode) {
+    TransportIsolationMode.UDP_ONLY -> "关闭 BLE，仅通过 UDP 发现与控制。"
+    TransportIsolationMode.BLE_ONLY -> "仅通过 BLE 建链与控制，禁用手动 UDP 目标。"
+    TransportIsolationMode.BLE_UDP -> "先通过 BLE 对齐地址，再切换 UDP 为主通道，失败时自动回退到 BLE。"
+}
+
+private fun connectionModeLabel(mode: ConnectionMode): String = when (mode) {
+    ConnectionMode.AUTO_PAIR -> "自动配对"
+    ConnectionMode.MANUAL -> "手动输入"
+}
+
+private fun pingResultSummary(result: PingUtil.PingResult?): String {
+    if (result == null) {
+        return "未测试"
+    }
+    if (!result.isSuccess) {
+        return result.errorMessage.ifBlank { "失败" }
+    }
+    return if (result.packetsReceived > 0) {
+        "成功，平均 ${result.avgTimeMs}ms"
+    } else {
+        "成功，0 响应"
+    }
 }
 
 @Composable
@@ -115,18 +154,14 @@ fun MainScreen(viewModel: MainViewModel) {
     val isUdpRunning by viewModel.isUdpRunning.collectAsState()
     val isVideoEnabled by viewModel.isVideoEnabled.collectAsState()
     val controllerState by viewModel.controllerState.collectAsState()
-    val targetIp by viewModel.targetIp.collectAsState()
-    val targetPort by viewModel.targetPort.collectAsState()
+    val bleConnectionState by viewModel.bleConnectionState.collectAsState()
     val connectionMode by viewModel.connectionMode.collectAsState()
     val transportIsolationMode by viewModel.transportIsolationMode.collectAsState()
-    val autoPairStatus by viewModel.autoPairStatus.collectAsState()
-    val bleConnectionState by viewModel.bleConnectionState.collectAsState()
-    val isBleScanning by viewModel.isBleScanning.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState()
     val showErrorDialog by viewModel.showErrorDialog.collectAsState()
     val showFrequencyDialog by viewModel.showFrequencyDialog.collectAsState()
     val showHostSelectionDialog by viewModel.showHostSelectionDialog.collectAsState()
-    val pairedHostName by viewModel.pairedHostName.collectAsState()
+    val linkDiagnostics by viewModel.linkDiagnostics.collectAsState()
     var activeDrawerPanel by remember { mutableStateOf<CockpitDrawerPanel?>(null) }
 
     showErrorDialog?.let { errorCode ->
@@ -151,38 +186,8 @@ fun MainScreen(viewModel: MainViewModel) {
         )
     }
 
-    val linkSummary = when (transportIsolationMode) {
-        TransportIsolationMode.UDP_ONLY -> if (isUdpRunning) "UDP live" else "UDP standby"
-        TransportIsolationMode.BLE_ONLY -> when {
-            bleConnectionState == BluetoothProfile.STATE_CONNECTED -> "BLE linked"
-            bleConnectionState == BluetoothProfile.STATE_CONNECTING -> "BLE connecting"
-            isBleScanning -> "BLE scanning"
-            else -> "BLE idle"
-        }
-        TransportIsolationMode.BLE_UDP -> when {
-            isUdpRunning -> "UDP primary"
-            bleConnectionState == BluetoothProfile.STATE_CONNECTED -> "BLE bootstrap"
-            isBleScanning -> "BLE scanning"
-            else -> "Hybrid standby"
-        }
-    }
-
-    val targetSummary = if (connectionMode == ConnectionMode.AUTO_PAIR) {
-        pairedHostName ?: when {
-            transportIsolationMode == TransportIsolationMode.BLE_ONLY -> "BLE Auto Pair"
-            autoPairStatus.isNotBlank() -> autoPairStatus
-            else -> "Auto Pair"
-        }
-    } else {
-        "$targetIp:$targetPort"
-    }
-
     val stickSize = if (activeDrawerPanel == null) 132.dp else 120.dp
-    val modeButtonValue = when (transportIsolationMode) {
-        TransportIsolationMode.UDP_ONLY -> "UDP"
-        TransportIsolationMode.BLE_ONLY -> "BLE"
-        TransportIsolationMode.BLE_UDP -> "Hybrid"
-    }
+    val modeButtonValue = connectionModeLabel(connectionMode)
 
     Box(
         modifier = Modifier
@@ -196,9 +201,9 @@ fun MainScreen(viewModel: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             CockpitStatusStrip(
-                modeValue = transportIsolationMode.displayName,
-                linkValue = linkSummary,
-                targetValue = targetSummary,
+                modeValue = transportModeLabel(transportIsolationMode),
+                linkValue = linkDiagnostics.bleStatusLabel,
+                targetValue = "${linkDiagnostics.udpState.label} / ${linkDiagnostics.currentPrimaryTransport}",
                 modeButtonValue = modeButtonValue,
                 isModeActive = activeDrawerPanel == CockpitDrawerPanel.CONNECTION,
                 isSettingsActive = activeDrawerPanel != null,
@@ -214,7 +219,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 StickPanel(
-                    title = "Left Stick",
+                    title = "左摇杆",
                     valueLabel = "${controllerState.leftStickX}, ${controllerState.leftStickY}",
                     titleAlignment = Alignment.Start,
                     stickAlignment = Alignment.BottomStart,
@@ -241,7 +246,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
 
                 StickPanel(
-                    title = "Right Stick",
+                    title = "右摇杆",
                     valueLabel = "${controllerState.rightStickX}, ${controllerState.rightStickY}",
                     titleAlignment = Alignment.End,
                     stickAlignment = Alignment.BottomEnd,
@@ -327,33 +332,33 @@ private fun CockpitStatusStrip(
             verticalAlignment = Alignment.CenterVertically
         ) {
             CockpitStatusChip(
-                label = "Mode",
+                label = "模式",
                 value = modeValue,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.weight(0.92f)
             )
             CockpitStatusChip(
-                label = "Link",
+                label = "BLE",
                 value = linkValue,
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                 modifier = Modifier.weight(0.96f)
             )
             CockpitStatusChip(
-                label = "Target",
+                label = "UDP",
                 value = targetValue,
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                 modifier = Modifier.weight(1.12f)
             )
             CockpitToolButton(
-                title = "Mode",
+                title = "模式",
                 value = modeButtonValue,
                 active = isModeActive,
                 accentColor = MaterialTheme.colorScheme.secondary,
                 onClick = onModeClick
             )
             CockpitToolButton(
-                title = "Settings",
-                value = "Panel",
+                title = "设置",
+                value = "抽屉",
                 active = isSettingsActive,
                 accentColor = MaterialTheme.colorScheme.primary,
                 onClick = onSettingsClick
@@ -531,7 +536,7 @@ private fun TransportModeSelector(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Transport Mode",
+                text = "传输模式",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -547,9 +552,9 @@ private fun TransportModeSelector(
                             TransportIsolationMode.BLE_ONLY -> "BLE"
                         },
                         supporting = when (mode) {
-                            TransportIsolationMode.UDP_ONLY -> "Primary"
-                            TransportIsolationMode.BLE_UDP -> "Handoff"
-                            TransportIsolationMode.BLE_ONLY -> "Bridge"
+                            TransportIsolationMode.UDP_ONLY -> "仅 UDP"
+                            TransportIsolationMode.BLE_UDP -> "自动回退"
+                            TransportIsolationMode.BLE_ONLY -> "仅 BLE"
                         },
                         selected = selectedMode == mode,
                         onClick = { onModeSelected(mode) },
@@ -700,7 +705,7 @@ private fun CockpitDrawer(
                     )
                 }
                 TextButton(onClick = onClose) {
-                    Text("Close")
+                    Text("关闭")
                 }
             }
 
@@ -788,12 +793,12 @@ private fun WheelTelemetry(leftWheel: Int, rightWheel: Int) {
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             WheelMeter(
-                title = "Left Wheel",
+                title = "左拨轮",
                 value = leftWheel,
                 modifier = Modifier.weight(1f)
             )
             WheelMeter(
-                title = "Right Wheel",
+                title = "右拨轮",
                 value = rightWheel,
                 modifier = Modifier.weight(1f)
             )
@@ -975,13 +980,13 @@ private fun ControllerDeck(
 @Composable
 private fun DirectionCluster(buttonMask: Int, onPress: (Int, Boolean) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        VirtualButton(text = "UP", bitIndex = 10, buttonMask = buttonMask, onPress = onPress)
+        VirtualButton(text = "上", bitIndex = 10, buttonMask = buttonMask, onPress = onPress)
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             VirtualButton(text = "LT", bitIndex = 12, buttonMask = buttonMask, onPress = onPress)
             Spacer(modifier = Modifier.size(38.dp))
             VirtualButton(text = "RT", bitIndex = 13, buttonMask = buttonMask, onPress = onPress)
         }
-        VirtualButton(text = "DN", bitIndex = 11, buttonMask = buttonMask, onPress = onPress)
+        VirtualButton(text = "下", bitIndex = 11, buttonMask = buttonMask, onPress = onPress)
     }
 }
 
@@ -1050,15 +1055,15 @@ private fun CenterBridgePanel(
             ) {
                 Text(
                     text = when (transportMode) {
-                        TransportIsolationMode.UDP_ONLY -> if (isUdpRunning) "UDP Primary" else "UDP Idle"
-                        TransportIsolationMode.BLE_ONLY -> if (bleConnectionState == BluetoothProfile.STATE_CONNECTED) "BLE Primary" else "BLE Waiting"
-                        TransportIsolationMode.BLE_UDP -> if (isUdpRunning) "UDP Primary" else "BLE Bootstrap"
+                        TransportIsolationMode.UDP_ONLY -> if (isUdpRunning) "UDP 主通道" else "UDP 待机"
+                        TransportIsolationMode.BLE_ONLY -> if (bleConnectionState == BluetoothProfile.STATE_CONNECTED) "BLE 主通道" else "BLE 等待中"
+                        TransportIsolationMode.BLE_UDP -> if (isUdpRunning) "UDP 主通道" else "BLE 引导中"
                     },
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Wheels $leftWheel / $rightWheel",
+                    text = "拨轮 $leftWheel / $rightWheel",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1072,7 +1077,7 @@ private fun CenterBridgePanel(
                 }
             ) {
                 Text(
-                    text = if (isVideoEnabled) "Video" else "Core",
+                    text = if (isVideoEnabled) "视频" else "核心",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
@@ -1135,7 +1140,7 @@ private fun BleDevicesPanelContent(
             Column(
             ) {
                 Text(
-                    text = "BLE Device Bridge",
+                    text = "BLE 设备桥",
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
@@ -1146,10 +1151,10 @@ private fun BleDevicesPanelContent(
             }
             StatusBadge(
                 text = when {
-                    !transportMode.allowsBle -> "DISABLED"
-                    bleConnectionState == BluetoothProfile.STATE_CONNECTED -> "CONNECTED"
-                    isBleScanning -> "SCANNING"
-                    else -> "READY"
+                    !transportMode.allowsBle -> "已禁用"
+                    bleConnectionState == BluetoothProfile.STATE_CONNECTED -> "已连接"
+                    isBleScanning -> "扫描中"
+                    else -> "就绪"
                 },
                 containerColor = when {
                     !transportMode.allowsBle -> MaterialTheme.colorScheme.surfaceVariant
@@ -1165,8 +1170,8 @@ private fun BleDevicesPanelContent(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             ActionButton(
-                title = if (isBleScanning) "Stop Scan" else "Start Scan",
-                subtitle = "Search for ROS2 gateway",
+                title = if (isBleScanning) "停止扫描" else "开始扫描",
+                subtitle = "搜索 ROS2 网关",
                 active = isBleScanning,
                 enabled = transportMode.allowsBle,
                 accentColor = MaterialTheme.colorScheme.secondary,
@@ -1176,8 +1181,8 @@ private fun BleDevicesPanelContent(
                 modifier = Modifier.weight(1f)
             )
             ActionButton(
-                title = "Disconnect",
-                subtitle = "Drop current BLE session",
+                title = "断开连接",
+                subtitle = "断开当前 BLE 会话",
                 active = bleConnectionState == BluetoothProfile.STATE_CONNECTED,
                 enabled = bleConnectionState == BluetoothProfile.STATE_CONNECTED,
                 accentColor = MaterialTheme.colorScheme.error,
@@ -1185,8 +1190,8 @@ private fun BleDevicesPanelContent(
                 modifier = Modifier.weight(1f)
             )
             ActionButton(
-                title = "Close",
-                subtitle = "Return to controller deck",
+                title = "关闭",
+                subtitle = "返回控制主界面",
                 onClick = onDismiss,
                 modifier = Modifier.weight(1f)
             )
@@ -1196,16 +1201,16 @@ private fun BleDevicesPanelContent(
 
         if (!transportMode.allowsBle) {
             EmptyStateCard(
-                title = "BLE is disabled in UDP Only mode",
-                supporting = "Switch transport mode to BLE or BLE + UDP to search and connect."
+                title = "当前为 UDP 模式，BLE 已禁用",
+                supporting = "切换到 BLE 或 BLE + UDP 后才能搜索并连接。"
             )
         } else if (bleScanResults.isEmpty()) {
             EmptyStateCard(
-                title = if (isBleScanning) "Searching for ROS2 BLE gateway" else "No BLE devices yet",
+                title = if (isBleScanning) "正在搜索 ROS2 BLE 网关" else "尚未发现 BLE 设备",
                 supporting = if (isBleScanning) {
-                    "The scan is running. Nearby ROS2 gateways will appear here."
+                    "扫描已启动，附近可用的 ROS2 网关会显示在这里。"
                 } else {
-                    "Start a BLE scan to discover RC26-ROS2 devices."
+                    "点击开始扫描，发现附近的 RC26-ROS2 设备。"
                 }
             )
         } else {
@@ -1308,7 +1313,7 @@ private fun BleDeviceCard(
                     }
                     if (bleDevice.isPaired) {
                         StatusBadge(
-                            text = "PAIRED",
+                            text = "已配对",
                             containerColor = MaterialTheme.colorScheme.tertiaryContainer
                         )
                     }
@@ -1325,7 +1330,7 @@ private fun BleDeviceCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = if (isConnected) "Tap to reconnect another device" else "Tap to connect",
+                text = if (isConnected) "点击切换到其他设备" else "点击连接",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -1339,11 +1344,12 @@ private fun SettingsPanelContent(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val targetIp by viewModel.targetIp.collectAsState()
+    val targetIpv4 by viewModel.targetIpv4.collectAsState()
+    val targetIpv6 by viewModel.targetIpv6.collectAsState()
     val targetPort by viewModel.targetPort.collectAsState()
     val localPort by viewModel.localPort.collectAsState()
-    val pingResult by viewModel.pingResult.collectAsState()
-    val isPinging by viewModel.isPinging.collectAsState()
+    val pingResults by viewModel.pingResults.collectAsState()
+    val pingInFlight by viewModel.pingInFlight.collectAsState()
     val udpValidationError by viewModel.udpValidationError.collectAsState()
     val connectionMode by viewModel.connectionMode.collectAsState()
     val transportIsolationMode by viewModel.transportIsolationMode.collectAsState()
@@ -1355,8 +1361,10 @@ private fun SettingsPanelContent(
     val discoveredHosts by viewModel.discoveredHosts.collectAsState()
     val isVideoEnabled by viewModel.isVideoEnabled.collectAsState()
     val frequencyHz by viewModel.frequencyManager.frequencyHz.collectAsState()
+    val linkDiagnostics by viewModel.linkDiagnostics.collectAsState()
 
-    var ipInput by remember(targetIp) { mutableStateOf(targetIp) }
+    var ipv4Input by remember(targetIpv4) { mutableStateOf(targetIpv4.orEmpty()) }
+    var ipv6Input by remember(targetIpv6) { mutableStateOf(targetIpv6.orEmpty()) }
     var portInput by remember(targetPort) { mutableStateOf(targetPort.toString()) }
     var localPortInput by remember(localPort) { mutableStateOf(localPort.toString()) }
     var pairCodeInput by remember(pairCode) { mutableStateOf(pairCode) }
@@ -1375,33 +1383,33 @@ private fun SettingsPanelContent(
         ) {
             Column {
                 Text(
-                    text = "Transport Settings",
+                    text = "连接设置",
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
-                    text = "Landscape drawer for pairing, routing, and runtime controls.",
+                    text = "主界面保持简洁，详细链路诊断集中在这里。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             StatusBadge(
-                text = transportIsolationMode.displayName,
+                text = transportModeLabel(transportIsolationMode),
                 containerColor = MaterialTheme.colorScheme.primaryContainer
             )
         }
 
-        SectionCard(title = "Connection") {
+        SectionCard(title = "连接模式") {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SegmentButton(
-                    label = "Auto Pair",
-                    supporting = "Recommended",
+                    label = "自动配对",
+                    supporting = "推荐",
                     selected = connectionMode == ConnectionMode.AUTO_PAIR,
                     onClick = { viewModel.setConnectionMode(ConnectionMode.AUTO_PAIR) },
                     modifier = Modifier.weight(1f)
                 )
                 SegmentButton(
-                    label = "Manual",
-                    supporting = "Direct target",
+                    label = "手动输入",
+                    supporting = "直接指定",
                     selected = connectionMode == ConnectionMode.MANUAL,
                     enabled = transportIsolationMode != TransportIsolationMode.BLE_ONLY,
                     onClick = { viewModel.setConnectionMode(ConnectionMode.MANUAL) },
@@ -1410,20 +1418,12 @@ private fun SettingsPanelContent(
             }
         }
 
-        SectionCard(title = "Transport") {
+        SectionCard(title = "传输模式") {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TransportIsolationMode.entries.forEach { mode ->
                     SegmentButton(
-                        label = when (mode) {
-                            TransportIsolationMode.UDP_ONLY -> "UDP"
-                            TransportIsolationMode.BLE_UDP -> "BLE + UDP"
-                            TransportIsolationMode.BLE_ONLY -> "BLE"
-                        },
-                        supporting = when (mode) {
-                            TransportIsolationMode.UDP_ONLY -> "Primary"
-                            TransportIsolationMode.BLE_UDP -> "Hybrid"
-                            TransportIsolationMode.BLE_ONLY -> "Bridge"
-                        },
+                        label = transportModeLabel(mode),
+                        supporting = transportModeSupportLabel(mode),
                         selected = transportIsolationMode == mode,
                         onClick = { viewModel.setTransportIsolationMode(mode) },
                         modifier = Modifier.weight(1f)
@@ -1432,29 +1432,25 @@ private fun SettingsPanelContent(
             }
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = when (transportIsolationMode) {
-                    TransportIsolationMode.UDP_ONLY -> "BLE is disabled. Discovery and control use UDP only."
-                    TransportIsolationMode.BLE_ONLY -> "BLE discovery and control are active. Manual target entry is disabled."
-                    TransportIsolationMode.BLE_UDP -> "BLE bootstraps the session, then UDP becomes the primary path."
-                },
+                text = transportModeDescription(transportIsolationMode),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        SectionCard(title = "Runtime") {
+        SectionCard(title = "运行控制") {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ActionButton(
-                    title = "Frequency",
-                    subtitle = "$frequencyHz Hz transmission",
+                    title = "频率",
+                    subtitle = "$frequencyHz Hz 发送",
                     active = false,
                     accentColor = MaterialTheme.colorScheme.secondary,
                     onClick = { viewModel.showFrequencyDialog() },
                     modifier = Modifier.weight(1f)
                 )
                 ActionButton(
-                    title = if (isVideoEnabled) "Video ON" else "Video OFF",
-                    subtitle = "Center panel preview",
+                    title = if (isVideoEnabled) "视频已开启" else "视频已关闭",
+                    subtitle = "中部预览面板",
                     active = isVideoEnabled,
                     accentColor = MaterialTheme.colorScheme.primary,
                     onClick = { viewModel.toggleVideo() },
@@ -1463,39 +1459,70 @@ private fun SettingsPanelContent(
             }
         }
 
-        SectionCard(title = "Current Status") {
-            Text(
-                text = "Link status: $autoPairStatus",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Current host: ${pairedHostName ?: "Not paired"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        SectionCard(title = "链路状态") {
+            DiagnosticStatusLine("BLE", linkDiagnostics.bleStatusLabel)
+            DiagnosticStatusLine("UDP", linkDiagnostics.udpState.label)
+            DiagnosticStatusLine("主通道", linkDiagnostics.currentPrimaryTransport)
+            DiagnosticStatusLine("地址来源", linkDiagnostics.peerAddressSource.label)
+            DiagnosticStatusLine("配对状态", autoPairStatus)
+            DiagnosticStatusLine("当前主机", pairedHostName ?: "未配对")
+            DiagnosticStatusLine("对端 IPv4", linkDiagnostics.peerAddresses.ipv4 ?: "-")
+            DiagnosticStatusLine("对端 IPv6", linkDiagnostics.peerAddresses.ipv6 ?: "-")
             pairedHostAddress?.let { address ->
-                Text(
-                    text = "Endpoint: $address:${pairedControlPort ?: DiscoveryProtocol.DEFAULT_CONTROL_PORT}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                DiagnosticStatusLine(
+                    "已配对端口",
+                    "$address:${pairedControlPort ?: DiscoveryProtocol.DEFAULT_CONTROL_PORT}"
                 )
             }
         }
 
+        SectionCard(title = "本机地址") {
+            DeckTextField(
+                label = "本机 IPv4",
+                supporting = "当前 RC Pro 局域网 IPv4。",
+                value = linkDiagnostics.localAddresses.ipv4.orEmpty(),
+                onValueChange = {},
+                placeholderText = "未获取",
+                readOnly = true
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            DeckTextField(
+                label = "本机 IPv6",
+                supporting = "当前 RC Pro 局域网 IPv6。",
+                value = linkDiagnostics.localAddresses.ipv6.orEmpty(),
+                onValueChange = {},
+                placeholderText = "未获取",
+                readOnly = true
+            )
+        }
+
         if (connectionMode == ConnectionMode.AUTO_PAIR) {
-            SectionCard(title = "Pairing") {
-                if (transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
+            SectionCard(title = "配对参数") {
+                if (transportIsolationMode.allowsUdp) {
                     DeckTextField(
-                        label = "Bootstrap Address",
-                        supporting = "Use the host IPv6 or IPv4 only when the Wi-Fi cannot auto-discover.",
-                        value = ipInput,
+                        label = "引导 IPv4",
+                        supporting = "自动发现失败时，可手动填写主机 IPv4。",
+                        value = ipv4Input,
                         onValueChange = {
-                            ipInput = it
+                            ipv4Input = it
                             viewModel.clearUdpValidationError()
                         },
-                        placeholderText = "Host IPv6 or IPv4",
+                        placeholderText = "例如 192.168.1.10",
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Next
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    DeckTextField(
+                        label = "引导 IPv6",
+                        supporting = "BLE 已连接时也可通过 BLE 自动同步主机 IPv6。",
+                        value = ipv6Input,
+                        onValueChange = {
+                            ipv6Input = it
+                            viewModel.clearUdpValidationError()
+                        },
+                        placeholderText = "例如 fd00::1234",
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Uri,
                             imeAction = ImeAction.Next
@@ -1504,7 +1531,7 @@ private fun SettingsPanelContent(
                     Spacer(modifier = Modifier.height(12.dp))
                 } else {
                     Text(
-                        text = "BLE Only uses BLE advertisements to discover the ROS2 gateway automatically.",
+                        text = "当前为 BLE 模式，地址会优先通过 BLE 自动同步。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1512,18 +1539,18 @@ private fun SettingsPanelContent(
                 }
 
                 DeckTextField(
-                    label = "Pair Code",
-                    supporting = "Short code used for BLE and UDP pairing.",
+                    label = "配对短码",
+                    supporting = "BLE 与 UDP 共用的认证短码。",
                     value = pairCodeInput,
                     onValueChange = { pairCodeInput = it },
                     placeholderText = DiscoveryProtocol.DEFAULT_PAIR_CODE
                 )
 
-                if (transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
+                if (transportIsolationMode.allowsUdp) {
                     Spacer(modifier = Modifier.height(12.dp))
                     DeckTextField(
-                        label = "Local Port",
-                        supporting = "Local UDP port for the RC Pro app.",
+                        label = "本机 UDP 端口",
+                        supporting = "RC Pro 本地发送端口。",
                         value = localPortInput,
                         onValueChange = {
                             localPortInput = it
@@ -1537,18 +1564,18 @@ private fun SettingsPanelContent(
                     )
                 }
 
-                if (discoveredHosts.isNotEmpty() && transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
+                if (discoveredHosts.isNotEmpty() && transportIsolationMode.allowsUdp) {
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "Discovered Hosts",
+                        text = "已发现主机",
                         style = MaterialTheme.typography.titleSmall
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     discoveredHosts.forEach { host ->
                         val tag = when {
-                            host.busy -> "Busy"
-                            host.ready -> "Ready"
-                            else -> "Waiting"
+                            host.busy -> "占用中"
+                            host.ready -> "就绪"
+                            else -> "等待中"
                         }
                         Card(
                             modifier = Modifier
@@ -1582,7 +1609,7 @@ private fun SettingsPanelContent(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 TextButton(onClick = { viewModel.selectDiscoveredHost(host) }) {
-                                    Text("Use")
+                                    Text("使用")
                                 }
                             }
                         }
@@ -1591,20 +1618,36 @@ private fun SettingsPanelContent(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 TextButton(onClick = { viewModel.forgetPairing() }) {
-                    Text("Forget Pairing")
+                    Text("清除配对")
                 }
             }
         } else {
-            SectionCard(title = "Manual Target") {
+            SectionCard(title = "手动目标") {
                 DeckTextField(
-                    label = "Target Address",
-                    supporting = "IPv6 and IPv4 are both supported. Give the address its own row to avoid clipping.",
-                    value = ipInput,
+                    label = "目标 IPv4",
+                    supporting = "用于局域网 IPv4 Ping 与 UDP 通信。",
+                    value = ipv4Input,
                     onValueChange = {
-                        ipInput = it
+                        ipv4Input = it
                         viewModel.clearUdpValidationError()
                     },
-                    placeholderText = "Target IPv6 or IPv4",
+                    placeholderText = "例如 192.168.1.10",
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Next
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                DeckTextField(
+                    label = "目标 IPv6",
+                    supporting = "用于局域网 IPv6 Ping 与 UDP 通信。",
+                    value = ipv6Input,
+                    onValueChange = {
+                        ipv6Input = it
+                        viewModel.clearUdpValidationError()
+                    },
+                    placeholderText = "例如 fd00::1234",
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Uri,
                         imeAction = ImeAction.Next
@@ -1613,32 +1656,9 @@ private fun SettingsPanelContent(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Button(
-                        onClick = { viewModel.performPing(ipInput) },
-                        enabled = !isPinging && ipInput.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                    ) {
-                        if (isPinging) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = MaterialTheme.colorScheme.onSecondary,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("Ping")
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
                 DeckTextField(
-                    label = "Target Port",
-                    supporting = "Remote UDP port exposed by the ROS2 gateway.",
+                    label = "目标 UDP 端口",
+                    supporting = "ROS2 网关暴露的远端 UDP 控制端口。",
                     value = portInput,
                     onValueChange = {
                         portInput = it
@@ -1654,8 +1674,8 @@ private fun SettingsPanelContent(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 DeckTextField(
-                    label = "Local Port",
-                    supporting = "Source UDP port used by the RC Pro app.",
+                    label = "本机 UDP 端口",
+                    supporting = "RC Pro 本地发送端口。",
                     value = localPortInput,
                     onValueChange = {
                         localPortInput = it
@@ -1670,50 +1690,51 @@ private fun SettingsPanelContent(
             }
         }
 
+        SectionCard(title = "Ping 测试") {
+            PingActionRow(
+                title = PingSlot.LOCAL_IPV4.label,
+                address = linkDiagnostics.localAddresses.ipv4.orEmpty(),
+                summary = pingResultSummary(pingResults[PingSlot.LOCAL_IPV4]),
+                inFlight = PingSlot.LOCAL_IPV4 in pingInFlight,
+                enabled = linkDiagnostics.localAddresses.ipv4?.isNotBlank() == true,
+                onPing = { viewModel.performPing(PingSlot.LOCAL_IPV4, linkDiagnostics.localAddresses.ipv4.orEmpty()) }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            PingActionRow(
+                title = PingSlot.LOCAL_IPV6.label,
+                address = linkDiagnostics.localAddresses.ipv6.orEmpty(),
+                summary = pingResultSummary(pingResults[PingSlot.LOCAL_IPV6]),
+                inFlight = PingSlot.LOCAL_IPV6 in pingInFlight,
+                enabled = linkDiagnostics.localAddresses.ipv6?.isNotBlank() == true,
+                onPing = { viewModel.performPing(PingSlot.LOCAL_IPV6, linkDiagnostics.localAddresses.ipv6.orEmpty()) }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            PingActionRow(
+                title = PingSlot.PEER_IPV4.label,
+                address = ipv4Input,
+                summary = pingResultSummary(pingResults[PingSlot.PEER_IPV4]),
+                inFlight = PingSlot.PEER_IPV4 in pingInFlight,
+                enabled = ipv4Input.isNotBlank(),
+                onPing = { viewModel.performPing(PingSlot.PEER_IPV4, ipv4Input) }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            PingActionRow(
+                title = PingSlot.PEER_IPV6.label,
+                address = ipv6Input,
+                summary = pingResultSummary(pingResults[PingSlot.PEER_IPV6]),
+                inFlight = PingSlot.PEER_IPV6 in pingInFlight,
+                enabled = ipv6Input.isNotBlank(),
+                onPing = { viewModel.performPing(PingSlot.PEER_IPV6, ipv6Input) }
+            )
+        }
+
         udpValidationError?.let { error ->
-            SectionCard(title = "Validation") {
+            SectionCard(title = "参数校验") {
                 Text(
                     text = error,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
-            }
-        }
-
-        pingResult?.let { result ->
-            SectionCard(title = "Ping Result") {
-                Text(
-                    text = if (result.isSuccess) "Ping success" else "Ping failed",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (result.isSuccess) {
-                        MaterialTheme.colorScheme.tertiary
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    }
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Target: ${result.ip}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                if (result.isSuccess) {
-                    Text(
-                        text = "Packets: ${result.packetsReceived}/${result.packetsSent} (${result.packetLossPercent}% loss)",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    if (result.packetsReceived > 0) {
-                        Text(
-                            text = "Latency: min ${result.minTimeMs}ms / max ${result.maxTimeMs}ms / avg ${result.avgTimeMs}ms",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                } else if (result.errorMessage.isNotEmpty()) {
-                    Text(
-                        text = "Error: ${result.errorMessage}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
             }
         }
 
@@ -1728,7 +1749,7 @@ private fun SettingsPanelContent(
                     onDismiss()
                 }
             ) {
-                Text("Cancel")
+                Text("取消")
             }
             Spacer(modifier = Modifier.width(10.dp))
             Button(
@@ -1743,14 +1764,16 @@ private fun SettingsPanelContent(
                         viewModel.updateTargetPort(portInput)
                     } else {
                         viewModel.setPairCode(pairCodeInput)
-                        if (transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
-                            viewModel.updateTargetIp(ipInput)
+                        if (transportIsolationMode.allowsUdp) {
+                            viewModel.updateTargetIpv4(ipv4Input)
+                            viewModel.updateTargetIpv6(ipv6Input)
                         }
                         true
                     }
 
                     if (connectionMode == ConnectionMode.MANUAL && transportIsolationMode.allowsUdp) {
-                        viewModel.updateTargetIp(ipInput)
+                        viewModel.updateTargetIpv4(ipv4Input)
+                        viewModel.updateTargetIpv6(ipv6Input)
                     }
 
                     if (savedLocalPort && savedTargetPort) {
@@ -1760,7 +1783,7 @@ private fun SettingsPanelContent(
                     }
                 }
             ) {
-                Text("Save")
+                Text("保存")
             }
         }
     }
@@ -1771,26 +1794,6 @@ fun SettingsDialog(
     viewModel: MainViewModel,
     onDismiss: () -> Unit
 ) {
-    val targetIp by viewModel.targetIp.collectAsState()
-    val targetPort by viewModel.targetPort.collectAsState()
-    val localPort by viewModel.localPort.collectAsState()
-    val pingResult by viewModel.pingResult.collectAsState()
-    val isPinging by viewModel.isPinging.collectAsState()
-    val udpValidationError by viewModel.udpValidationError.collectAsState()
-    val connectionMode by viewModel.connectionMode.collectAsState()
-    val transportIsolationMode by viewModel.transportIsolationMode.collectAsState()
-    val autoPairStatus by viewModel.autoPairStatus.collectAsState()
-    val pairCode by viewModel.pairCode.collectAsState()
-    val pairedHostName by viewModel.pairedHostName.collectAsState()
-    val pairedHostAddress by viewModel.pairedHostAddress.collectAsState()
-    val pairedControlPort by viewModel.pairedControlPort.collectAsState()
-    val discoveredHosts by viewModel.discoveredHosts.collectAsState()
-
-    var ipInput by remember(targetIp) { mutableStateOf(targetIp) }
-    var portInput by remember(targetPort) { mutableStateOf(targetPort.toString()) }
-    var localPortInput by remember(localPort) { mutableStateOf(localPort.toString()) }
-    var pairCodeInput by remember(pairCode) { mutableStateOf(pairCode) }
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -1804,388 +1807,13 @@ fun SettingsDialog(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp
         ) {
-            Column(
+            SettingsPanelContent(
+                viewModel = viewModel,
+                onDismiss = onDismiss,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Transport Settings",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = "Bright control layout with explicit mode and pairing sections.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    StatusBadge(
-                        text = transportIsolationMode.displayName,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                }
-
-                SectionCard(title = "Connection") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SegmentButton(
-                            label = "Auto Pair",
-                            supporting = "Recommended",
-                            selected = connectionMode == ConnectionMode.AUTO_PAIR,
-                            onClick = { viewModel.setConnectionMode(ConnectionMode.AUTO_PAIR) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        SegmentButton(
-                            label = "Manual",
-                            supporting = "Direct target",
-                            selected = connectionMode == ConnectionMode.MANUAL,
-                            enabled = transportIsolationMode != TransportIsolationMode.BLE_ONLY,
-                            onClick = { viewModel.setConnectionMode(ConnectionMode.MANUAL) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                SectionCard(title = "Transport") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TransportIsolationMode.entries.forEach { mode ->
-                            SegmentButton(
-                                label = when (mode) {
-                                    TransportIsolationMode.UDP_ONLY -> "UDP"
-                                    TransportIsolationMode.BLE_UDP -> "BLE + UDP"
-                                    TransportIsolationMode.BLE_ONLY -> "BLE"
-                                },
-                                supporting = when (mode) {
-                                    TransportIsolationMode.UDP_ONLY -> "Primary"
-                                    TransportIsolationMode.BLE_UDP -> "Hybrid"
-                                    TransportIsolationMode.BLE_ONLY -> "Bridge"
-                                },
-                                selected = transportIsolationMode == mode,
-                                onClick = { viewModel.setTransportIsolationMode(mode) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = when (transportIsolationMode) {
-                            TransportIsolationMode.UDP_ONLY -> "BLE is disabled. Discovery and control use UDP only."
-                            TransportIsolationMode.BLE_ONLY -> "BLE discovery and control are active. Manual target entry is disabled."
-                            TransportIsolationMode.BLE_UDP -> "BLE bootstraps the session, then UDP becomes the primary path."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                SectionCard(title = "Current Status") {
-                    Text(
-                        text = "Link status: $autoPairStatus",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Current host: ${pairedHostName ?: "Not paired"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    pairedHostAddress?.let { address ->
-                        Text(
-                            text = "Endpoint: $address:${pairedControlPort ?: DiscoveryProtocol.DEFAULT_CONTROL_PORT}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                if (connectionMode == ConnectionMode.AUTO_PAIR) {
-                    SectionCard(title = "Pairing") {
-                        if (transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
-                            DeckTextField(
-                                label = "Bootstrap Address",
-                                supporting = "Use the host IPv6 or IPv4 only when the Wi-Fi cannot auto-discover.",
-                                value = ipInput,
-                                onValueChange = {
-                                    ipInput = it
-                                    viewModel.clearUdpValidationError()
-                                },
-                                placeholderText = "Host IPv6 or IPv4",
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Uri,
-                                    imeAction = ImeAction.Next
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                        } else {
-                            Text(
-                                text = "BLE Only uses BLE advertisements to discover the ROS2 gateway automatically.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                        }
-
-                        DeckTextField(
-                            label = "Pair Code",
-                            supporting = "Short code used for BLE and UDP pairing.",
-                            value = pairCodeInput,
-                            onValueChange = { pairCodeInput = it },
-                            placeholderText = DiscoveryProtocol.DEFAULT_PAIR_CODE
-                        )
-
-                        if (transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            DeckTextField(
-                                label = "Local Port",
-                                supporting = "Local UDP port for the RC Pro app.",
-                                value = localPortInput,
-                                onValueChange = {
-                                    localPortInput = it
-                                    viewModel.clearUdpValidationError()
-                                },
-                                placeholderText = "1346",
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                )
-                            )
-                        }
-
-                        if (discoveredHosts.isNotEmpty() && transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Text(
-                                text = "Discovered Hosts",
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            discoveredHosts.forEach { host ->
-                                val tag = when {
-                                    host.busy -> "Busy"
-                                    host.ready -> "Ready"
-                                    else -> "Waiting"
-                                }
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 8.dp),
-                                    shape = DeckButtonShape,
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(host.hostName, style = MaterialTheme.typography.titleSmall)
-                                            Text(
-                                                text = host.label,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        StatusBadge(
-                                            text = tag,
-                                            containerColor = when {
-                                                host.busy -> MaterialTheme.colorScheme.errorContainer
-                                                host.ready -> MaterialTheme.colorScheme.tertiaryContainer
-                                                else -> MaterialTheme.colorScheme.secondaryContainer
-                                            }
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        TextButton(onClick = { viewModel.selectDiscoveredHost(host) }) {
-                                            Text("Use")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-                        TextButton(onClick = { viewModel.forgetPairing() }) {
-                            Text("Forget Pairing")
-                        }
-                    }
-                } else {
-                    SectionCard(title = "Manual Target") {
-                        DeckTextField(
-                            label = "Target Address",
-                            supporting = "IPv6 and IPv4 are both supported. Give the address its own row to avoid clipping.",
-                            value = ipInput,
-                            onValueChange = {
-                                ipInput = it
-                                viewModel.clearUdpValidationError()
-                            },
-                            placeholderText = "Target IPv6 or IPv4",
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Uri,
-                                imeAction = ImeAction.Next
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Button(
-                                onClick = { viewModel.performPing(ipInput) },
-                                enabled = !isPinging && ipInput.isNotBlank(),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                            ) {
-                                if (isPinging) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        color = MaterialTheme.colorScheme.onSecondary,
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Text("Ping")
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        DeckTextField(
-                            label = "Target Port",
-                            supporting = "Remote UDP port exposed by the ROS2 gateway.",
-                            value = portInput,
-                            onValueChange = {
-                                portInput = it
-                                viewModel.clearUdpValidationError()
-                            },
-                            placeholderText = "1387",
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number,
-                                imeAction = ImeAction.Next
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        DeckTextField(
-                            label = "Local Port",
-                            supporting = "Source UDP port used by the RC Pro app.",
-                            value = localPortInput,
-                            onValueChange = {
-                                localPortInput = it
-                                viewModel.clearUdpValidationError()
-                            },
-                            placeholderText = "1346",
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number,
-                                imeAction = ImeAction.Done
-                            )
-                        )
-                    }
-                }
-
-                udpValidationError?.let { error ->
-                    SectionCard(title = "Validation") {
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-
-                pingResult?.let { result ->
-                    SectionCard(title = "Ping Result") {
-                        Text(
-                            text = if (result.isSuccess) "Ping success" else "Ping failed",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (result.isSuccess) {
-                                MaterialTheme.colorScheme.tertiary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Target: ${result.ip}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        if (result.isSuccess) {
-                            Text(
-                                text = "Packets: ${result.packetsReceived}/${result.packetsSent} (${result.packetLossPercent}% loss)",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            if (result.packetsReceived > 0) {
-                                Text(
-                                    text = "Latency: min ${result.minTimeMs}ms / max ${result.maxTimeMs}ms / avg ${result.avgTimeMs}ms",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        } else if (result.errorMessage.isNotEmpty()) {
-                            Text(
-                                text = "Error: ${result.errorMessage}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        onClick = {
-                            viewModel.clearPingResult()
-                            viewModel.clearUdpValidationError()
-                            onDismiss()
-                        }
-                    ) {
-                        Text("Cancel")
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Button(
-                        onClick = {
-                            val savedLocalPort = if (transportIsolationMode.allowsUdp) {
-                                viewModel.updateLocalPort(localPortInput)
-                            } else {
-                                true
-                            }
-
-                            val savedTargetPort = if (connectionMode == ConnectionMode.MANUAL) {
-                                viewModel.updateTargetPort(portInput)
-                            } else {
-                                viewModel.setPairCode(pairCodeInput)
-                                if (transportIsolationMode != TransportIsolationMode.BLE_ONLY) {
-                                    viewModel.updateTargetIp(ipInput)
-                                }
-                                true
-                            }
-
-                            if (connectionMode == ConnectionMode.MANUAL && transportIsolationMode.allowsUdp) {
-                                viewModel.updateTargetIp(ipInput)
-                            }
-
-                            if (savedLocalPort && savedTargetPort) {
-                                viewModel.clearPingResult()
-                                viewModel.clearUdpValidationError()
-                                onDismiss()
-                            }
-                        }
-                    ) {
-                        Text("Save")
-                    }
-                }
-            }
+                    .padding(20.dp)
+            )
         }
     }
 }
@@ -2219,13 +1847,96 @@ private fun SectionCard(
 }
 
 @Composable
+private fun DiagnosticStatusLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End
+        )
+    }
+}
+
+@Composable
+private fun PingActionRow(
+    title: String,
+    address: String,
+    summary: String,
+    inFlight: Boolean,
+    enabled: Boolean,
+    onPing: () -> Unit
+) {
+    Card(
+        shape = DeckButtonShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = address.ifBlank { "未填写地址" },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Button(
+                    onClick = onPing,
+                    enabled = enabled && !inFlight,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                ) {
+                    if (inFlight) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onSecondary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Ping")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DeckTextField(
     label: String,
     supporting: String,
     value: String,
     onValueChange: (String) -> Unit,
     placeholderText: String,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    readOnly: Boolean = false
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
@@ -2252,6 +1963,7 @@ private fun DeckTextField(
             },
             singleLine = true,
             keyboardOptions = keyboardOptions,
+            readOnly = readOnly,
             shape = DeckButtonShape
         )
     }
@@ -2283,11 +1995,11 @@ fun HostSelectionDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Select Host",
+                    text = "选择主机",
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
-                    text = "Multiple gateways are ready. Choose the default control host.",
+                    text = "当前有多个网关可用，请选择默认控制主机。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2309,7 +2021,7 @@ fun HostSelectionDialog(
                                 Text(host.address, style = MaterialTheme.typography.bodySmall)
                             }
                             Button(onClick = { viewModel.selectDiscoveredHost(host) }) {
-                                Text("Use")
+                                Text("使用")
                             }
                         }
                     }
@@ -2319,7 +2031,7 @@ fun HostSelectionDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text("取消")
                     }
                 }
             }
@@ -2392,7 +2104,7 @@ private fun DataLogPanelContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Data Log",
+                text = "数据日志",
                 style = MaterialTheme.typography.titleLarge
             )
             StatusBadge(
@@ -2413,7 +2125,7 @@ private fun DataLogPanelContent(
                 onCheckedChange = { showBle = it }
             )
             FilterToggle(
-                label = "Debug",
+                label = "调试",
                 checked = showDebug,
                 onCheckedChange = { showDebug = it }
             )
@@ -2459,11 +2171,11 @@ private fun DataLogPanelContent(
                 onClick = { viewModel.clearDataLogs() },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
-                Text("Clear")
+                Text("清空")
             }
             Spacer(modifier = Modifier.width(10.dp))
             Button(onClick = onDismiss) {
-                Text("Close")
+                Text("关闭")
             }
         }
     }

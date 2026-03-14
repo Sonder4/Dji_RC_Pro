@@ -54,7 +54,7 @@ fun ConnectionStatusPanel(
         ) {
             // Title
             Text(
-                text = "Connection Status",
+                text = "连接状态",
                 color = Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
@@ -94,7 +94,7 @@ fun ConnectionStatusPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Frequency",
+                    text = "频率",
                     color = Color.LightGray,
                     fontSize = 12.sp
                 )
@@ -141,14 +141,14 @@ private fun OverallStatusRow(
     isReconnecting: Boolean
 ) {
     val (color, text) = when {
-        isReconnecting -> Color.Yellow to "Reconnecting..."
+        isReconnecting -> Color.Yellow to "重连中"
         else -> when (state) {
-            OverallConnectionState.CONNECTED -> Color.Green to "Connected"
-            OverallConnectionState.PARTIAL -> Color(0xFF00BFFF) to "Partial"
-            OverallConnectionState.CONNECTING -> Color.Yellow to "Connecting..."
-            OverallConnectionState.ERROR -> Color.Red to "Error"
-            OverallConnectionState.DISCONNECTED -> Color.Gray to "Disconnected"
-            OverallConnectionState.RECONNECTING -> Color.Yellow to "Reconnecting..."
+            OverallConnectionState.CONNECTED -> Color.Green to "已连接"
+            OverallConnectionState.PARTIAL -> Color(0xFF00BFFF) to "部分连接"
+            OverallConnectionState.CONNECTING -> Color.Yellow to "连接中"
+            OverallConnectionState.ERROR -> Color.Red to "错误"
+            OverallConnectionState.DISCONNECTED -> Color.Gray to "未连接"
+            OverallConnectionState.RECONNECTING -> Color.Yellow to "重连中"
         }
     }
 
@@ -158,7 +158,7 @@ private fun OverallStatusRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "Status",
+            text = "状态",
             color = Color.LightGray,
             fontSize = 12.sp
         )
@@ -203,7 +203,7 @@ private fun TransportStatusItem(
                 .background(color, RoundedCornerShape(4.dp))
         )
         Text(
-            text = if (isConnected) "ON" else if (isConnecting) "..." else "OFF",
+            text = if (isConnected) "开" else if (isConnecting) "..." else "关",
             color = color,
             fontSize = 10.sp
         )
@@ -224,10 +224,10 @@ private fun HeartbeatStatusRow(
     }
 
     val statusText = when (status) {
-        HealthStatus.HEALTHY -> "Healthy"
-        HealthStatus.DEGRADED -> "Degraded"
-        HealthStatus.UNHEALTHY -> "Unhealthy"
-        HealthStatus.INACTIVE -> "Inactive"
+        HealthStatus.HEALTHY -> "正常"
+        HealthStatus.DEGRADED -> "降级"
+        HealthStatus.UNHEALTHY -> "异常"
+        HealthStatus.INACTIVE -> "未激活"
     }
 
     Row(
@@ -236,7 +236,7 @@ private fun HeartbeatStatusRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "Heartbeat",
+            text = "心跳",
             color = Color.LightGray,
             fontSize = 12.sp
         )
@@ -278,7 +278,7 @@ private fun ReconnectStatusRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "Reconnecting",
+            text = "重连中",
             color = Color.Yellow,
             fontSize = 11.sp
         )
@@ -303,12 +303,12 @@ private fun StatisticsRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "Sent: ${formatNumber(packetsSent)}",
+                text = "发送: ${formatNumber(packetsSent)}",
                 color = Color.LightGray,
                 fontSize = 10.sp
             )
             Text(
-                text = "Recv: ${formatNumber(packetsReceived)}",
+                text = "接收: ${formatNumber(packetsReceived)}",
                 color = Color.LightGray,
                 fontSize = 10.sp
             )
@@ -318,12 +318,12 @@ private fun StatisticsRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "Errors: $errors",
+                text = "错误: $errors",
                 color = if (errors > 0) Color.Red else Color.LightGray,
                 fontSize = 10.sp
             )
             Text(
-                text = "Uptime: ${formatDuration(uptime)}",
+                text = "运行: ${formatDuration(uptime)}",
                 color = Color.LightGray,
                 fontSize = 10.sp
             )

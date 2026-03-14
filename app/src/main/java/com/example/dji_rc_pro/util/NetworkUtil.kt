@@ -9,6 +9,11 @@ import java.net.NetworkInterface
  */
 object NetworkUtil {
 
+    data class AddressSnapshot(
+        val ipv4: String? = null,
+        val ipv6: String? = null
+    )
+
     /**
      * Get the device's preferred local address for display.
      * Prefers non-link-local IPv4 first, then global IPv6.
@@ -62,6 +67,36 @@ object NetworkUtil {
             sb.toString().trim().ifEmpty { "No active network addresses" }
         } catch (e: Exception) {
             "Error: ${e.message}"
+        }
+    }
+
+    fun getAddressSnapshot(): AddressSnapshot {
+        return try {
+            var ipv4: String? = null
+            var ipv6: String? = null
+            NetworkInterface.getNetworkInterfaces().toList().forEach { iface ->
+                iface.inetAddresses.toList()
+                    .filter { !it.isLoopbackAddress }
+                    .forEach { address ->
+                            when (address) {
+                                is Inet4Address -> {
+                                    val hostAddress = address.hostAddress
+                                    if (ipv4 == null && hostAddress != null && !hostAddress.startsWith("169.254")) {
+                                        ipv4 = hostAddress
+                                    }
+                                }
+                                is Inet6Address -> {
+                                    if (ipv6 == null && !address.isLinkLocalAddress) {
+                                    ipv6 = address.hostAddress?.substringBefore('%')
+                                }
+                            }
+                        }
+                    }
+            }
+            AddressSnapshot(ipv4 = ipv4, ipv6 = ipv6)
+        } catch (e: Exception) {
+            LogUtil.e("Failed to get local address snapshot", e)
+            AddressSnapshot()
         }
     }
 }

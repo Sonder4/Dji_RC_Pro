@@ -28,6 +28,7 @@ import com.example.dji_rc_pro.manager.logBleServiceDiscover
 import com.example.dji_rc_pro.manager.logBleStateChange
 import com.example.dji_rc_pro.util.ErrorCode
 import com.example.dji_rc_pro.util.LogUtil
+import com.example.dji_rc_pro.util.NetworkUtil
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -607,11 +608,17 @@ class BleManager private constructor(context: Context) {
         }
 
         override fun onCharacteristicRead(gatt: BluetoothGatt?, characteristic: BluetoothGattCharacteristic?, status: Int) {
+            val data = characteristic?.value
             LogUtil.d(
-                "ROS2 BLE onCharacteristicRead uuid=${characteristic?.uuid} status=$status bytes=${characteristic?.value?.size ?: 0}",
+                "ROS2 BLE onCharacteristicRead uuid=${characteristic?.uuid} status=$status bytes=${data?.size ?: 0}",
                 TAG
             )
-            if (status != BluetoothGatt.GATT_SUCCESS) {
+            val shouldProcessPayload = Ros2BleReadPolicy.shouldProcessPayload(
+                characteristicUuid = characteristic?.uuid,
+                status = status,
+                payload = data
+            )
+            if (!shouldProcessPayload) {
                 when (characteristic?.uuid) {
                     Ros2BleProfile.PAIR_CONTROL_UUID -> scheduleRos2SessionReadRetry("pair_control_status_$status")
                     Ros2BleProfile.NETWORK_INFO_UUID -> scheduleRos2SessionReadRetry("network_info_status_$status")
@@ -619,28 +626,34 @@ class BleManager private constructor(context: Context) {
                 }
                 return
             }
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                LogUtil.w(
+                    "ROS2 BLE read returned non-success status=$status but payload is accepted for ${characteristic?.uuid}",
+                    TAG
+                )
+            }
             val deviceAddress = gatt?.device?.address
-            val data = characteristic?.value ?: return
+            val payload = data ?: return
             dataLogManager?.addBleDebugLog(
                 operation = BleOperation.CHARACTERISTIC_READ,
-                message = "Characteristic read ${characteristic.uuid} (${data.size} bytes)",
+                message = "Characteristic read ${characteristic.uuid} (${payload.size} bytes)",
                 level = LogLevel.DEBUG,
                 macAddress = deviceAddress,
-                data = data
+                data = payload
             )
             heartbeatManager?.onHeartbeatReceived("BLE")
-            connectionManager?.onBleActivity(bytesReceived = data.size.toLong())
+            connectionManager?.onBleActivity(bytesReceived = payload.size.toLong())
 
             when (characteristic.uuid) {
-                Ros2BleProfile.PAIR_CONTROL_UUID -> handleRos2PairControlMessage(data, deviceAddress)
+                Ros2BleProfile.PAIR_CONTROL_UUID -> handleRos2PairControlMessage(payload, deviceAddress)
                 Ros2BleProfile.NETWORK_INFO_UUID -> {
                     ros2SessionReadRetryCount = 0
-                    applyRos2NetworkInfo(data)
+                    applyRos2NetworkInfo(payload)
                     readRos2StatusCharacteristic()
                 }
                 Ros2BleProfile.STATUS_UUID -> {
                     ros2SessionReadRetryCount = 0
-                    applyRos2Status(data)
+                    applyRos2Status(payload)
                     if (_ros2GatewaySession.value.paired && statusPollJob?.isActive != true) {
                         startStatusPolling()
                     }
@@ -701,9 +714,12 @@ class BleManager private constructor(context: Context) {
             runCatching {
                 val repo = ConfigRepository.get()
                 val pairCode = repo.pairCode.first()
+                val localAddressSnapshot = NetworkUtil.getAddressSnapshot()
                 val nextProbeState = Ros2BleProfile.createProbeState(
                     clientSeed = repo.getOrCreateClientId(),
-                    pairCode = pairCode
+                    pairCode = pairCode,
+                    clientIpv4 = localAddressSnapshot.ipv4,
+                    clientIpv6 = localAddressSnapshot.ipv6
                 )
                 probeState = nextProbeState
                 pendingPairContext = null

@@ -7,13 +7,23 @@ import android.os.Build
 import android.bluetooth.le.ScanResult
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-
 import com.example.dji_rc_pro.domain.ble.BleManager
 import com.example.dji_rc_pro.domain.ble.Ros2BleProfile
 import com.example.dji_rc_pro.domain.config.ConnectionMode
 import com.example.dji_rc_pro.domain.config.ConfigRepository
 import com.example.dji_rc_pro.domain.config.DebugLaunchOverrideStore
 import com.example.dji_rc_pro.domain.config.TransportIsolationMode
+import com.example.dji_rc_pro.domain.diagnostics.AddressSyncPolicy
+import com.example.dji_rc_pro.domain.diagnostics.BleLinkEvent
+import com.example.dji_rc_pro.domain.diagnostics.BleLinkPhase
+import com.example.dji_rc_pro.domain.diagnostics.BleLinkStateMachine
+import com.example.dji_rc_pro.domain.diagnostics.BlePairingStatusResolver
+import com.example.dji_rc_pro.domain.diagnostics.BleLinkStatusResolver
+import com.example.dji_rc_pro.domain.diagnostics.LinkDiagnosticsState
+import com.example.dji_rc_pro.domain.diagnostics.NetworkAddressSnapshot
+import com.example.dji_rc_pro.domain.diagnostics.PeerAddressSource
+import com.example.dji_rc_pro.domain.diagnostics.PingSlot
+import com.example.dji_rc_pro.domain.diagnostics.UdpLinkState
 import com.example.dji_rc_pro.domain.discovery.DiscoveryEvent
 import com.example.dji_rc_pro.domain.discovery.DiscoveryProtocol
 import com.example.dji_rc_pro.domain.discovery.HostSelectionDecision
@@ -33,14 +43,19 @@ import com.example.dji_rc_pro.service.BleService
 import com.example.dji_rc_pro.service.UdpService
 import com.example.dji_rc_pro.util.ErrorCode
 import com.example.dji_rc_pro.util.LogExportUtil
+import com.example.dji_rc_pro.util.LogUtil
 import com.example.dji_rc_pro.util.NetworkUtil
 import com.example.dji_rc_pro.util.PingUtil
 import com.example.dji_rc_pro.util.UdpEndpointConfig
 import android.util.Log
 import timber.log.Timber
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,10 +65,14 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val configRepository = ConfigRepository.get()
     private val wifiDiscoveryManager = WifiDiscoveryManager(application)
     private var launchOverrides = DebugLaunchOverrideStore.current()
+    private val diagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+    private val addressSyncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val pingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     
     // UI State
     private val _isUdpRunning = MutableStateFlow(false)
@@ -113,11 +132,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPinging = MutableStateFlow(false)
     val isPinging: StateFlow<Boolean> = _isPinging.asStateFlow()
 
+    private val _pingResults = MutableStateFlow<Map<PingSlot, PingUtil.PingResult>>(emptyMap())
+    val pingResults: StateFlow<Map<PingSlot, PingUtil.PingResult>> = _pingResults.asStateFlow()
+
+    private val _pingInFlight = MutableStateFlow<Set<PingSlot>>(emptySet())
+    val pingInFlight: StateFlow<Set<PingSlot>> = _pingInFlight.asStateFlow()
+
     private val _autoPairStatus = MutableStateFlow("正在发现主机")
     val autoPairStatus: StateFlow<String> = _autoPairStatus.asStateFlow()
 
     private val _bleGatewayStatus = MutableStateFlow("BLE 网关未连接")
     val bleGatewayStatus: StateFlow<String> = _bleGatewayStatus.asStateFlow()
+
+    private val _linkDiagnostics = MutableStateFlow(
+        LinkDiagnosticsState(
+            localAddresses = NetworkUtil.getAddressSnapshot().toNetworkAddressSnapshot()
+        )
+    )
+    val linkDiagnostics: StateFlow<LinkDiagnosticsState> = _linkDiagnostics.asStateFlow()
 
     private val _showHostSelectionDialog = MutableStateFlow(false)
     val showHostSelectionDialog: StateFlow<Boolean> = _showHostSelectionDialog.asStateFlow()
@@ -132,6 +164,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var autoBleConnectAddress: String? = null
     private var lastAutoBleConnectAtMs: Long = 0L
     private var lastAppliedBleTargetKey: String? = null
+    private var lastStaleProbeKey: String? = null
     private var bleServiceRetryJob: Job? = null
     private var bleServiceRetryCount = 0
 
@@ -160,7 +193,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun effectiveTargetIp(value: String = targetIp.value): String {
-        return launchOverrides?.targetIp ?: value
+        return launchOverrides?.targetIp
+            ?: AddressSyncPolicy.chooseTargetAddress(
+                peerIpv4 = targetIpv4.value,
+                peerIpv6 = targetIpv6.value,
+                preferredFamily = currentPreferredFamily()
+            )
+            ?: value
     }
 
     private fun effectiveTargetPort(value: Int = targetPort.value): Int {
@@ -170,6 +209,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun clearLaunchOverrides() {
         launchOverrides = null
         DebugLaunchOverrideStore.clear()
+    }
+
+    private fun currentPreferredFamily(): DiscoveryProtocol.AddressFamily? {
+        return bleRos2Session.value.selectedFamily
+            ?: bleRos2Session.value.preferredFamily
+            ?: pairedHostFamily.value
+    }
+
+    private fun updateBlePhase(event: BleLinkEvent) {
+        diagnosticsScope.launch {
+            val nextPhase = BleLinkStateMachine.transition(
+                current = _linkDiagnostics.value.blePhase,
+                event = event,
+                transportMode = effectiveTransportMode()
+            )
+            _linkDiagnostics.value = _linkDiagnostics.value.copy(blePhase = nextPhase)
+            syncTransportDiagnostics()
+        }
+    }
+
+    private fun syncTransportDiagnostics() {
+        val session = bleRos2Session.value
+        val udpState = when {
+            effectiveTransportMode() == TransportIsolationMode.BLE_ONLY -> UdpLinkState.IDLE
+            _isUdpRunning.value || session.udpReady || connectionManager.isUdpConnected() -> UdpLinkState.READY
+            _linkDiagnostics.value.blePhase == BleLinkPhase.VERIFYING_UDP -> UdpLinkState.VERIFYING
+            _linkDiagnostics.value.blePhase == BleLinkPhase.BLE_FALLBACK_ACTIVE -> UdpLinkState.BLE_FALLBACK
+            _linkDiagnostics.value.blePhase == BleLinkPhase.COMMUNICATION_FAILED -> UdpLinkState.FAILED
+            else -> UdpLinkState.IDLE
+        }
+        val currentPrimaryTransport = when {
+            udpState == UdpLinkState.READY -> "UDP"
+            session.shouldTransmitControlOverBle || _linkDiagnostics.value.blePhase == BleLinkPhase.BLE_FALLBACK_ACTIVE -> "蓝牙"
+            else -> "未建立"
+        }
+        val normalizedBlePhase = BleLinkStatusResolver.normalize(
+            current = _linkDiagnostics.value.blePhase,
+            udpState = udpState,
+            bleConnected = bleConnectionState.value == BluetoothProfile.STATE_CONNECTED
+        )
+        _linkDiagnostics.value = _linkDiagnostics.value.copy(
+            blePhase = normalizedBlePhase,
+            udpState = udpState,
+            currentPrimaryTransport = currentPrimaryTransport
+        )
+    }
+
+    private fun refreshLocalNetworkSnapshot() {
+        val snapshot = NetworkUtil.getAddressSnapshot().toNetworkAddressSnapshot()
+        _linkDiagnostics.value = _linkDiagnostics.value.copy(localAddresses = snapshot)
+    }
+
+    private fun markPeerAddresses(
+        ipv4: String?,
+        ipv6: String?,
+        source: PeerAddressSource
+    ) {
+        _linkDiagnostics.value = _linkDiagnostics.value.copy(
+            peerAddresses = NetworkAddressSnapshot(ipv4 = ipv4, ipv6 = ipv6),
+            peerAddressSource = source
+        )
     }
 
     private fun shouldManageBleAutoScan(
@@ -204,6 +304,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleMissingBleGateway(state: BleAutoState) {
         if (canStartBleScan(state.connectionState, state.isScanning)) {
             bleManager.startScan()
+            updateBlePhase(BleLinkEvent.SCAN_STARTED)
         }
         showSearchingBleGatewayStatus()
     }
@@ -212,6 +313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         autoBleConnectAddress = device.device.address
         lastAutoBleConnectAtMs = nowMs
         _bleGatewayStatus.value = "正在连接 ${device.device.name ?: device.device.address}"
+        updateBlePhase(BleLinkEvent.CONNECTION_REQUESTED)
         connectBle(device)
     }
 
@@ -350,6 +452,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun discoveryBootstrapTargets(): Set<String> {
         val targets = linkedSetOf<String>()
         pairedHostAddress.value?.takeIf { it.isNotBlank() }?.let { targets += it }
+        targetIpv4.value?.takeIf { it.isNotBlank() }?.let { targets += it }
+        targetIpv6.value?.takeIf { it.isNotBlank() }?.let { targets += it }
         effectiveTargetIp()
             .takeIf { it.isNotBlank() && it != "192.168.1.83" }
             ?.let { targets += it }
@@ -446,11 +550,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun updateAutoPairStatus(hosts: List<DiscoveryProtocol.DiscoveredHost>) {
-        if (!effectiveTransportMode().allowsWifiDiscovery) {
-            _autoPairStatus.value = wifiAutoPairDisabledStatusMessage()
-            return
-        }
-
         if (effectiveConnectionMode() == ConnectionMode.MANUAL) {
             _autoPairStatus.value = manualModeStatusMessage()
             return
@@ -458,6 +557,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         if (_isUdpRunning.value) {
             _autoPairStatus.value = connectedAutoPairStatus()
+            return
+        }
+
+        currentBlePairingStatusOverride()?.let { status ->
+            _autoPairStatus.value = status
+            return
+        }
+
+        if (!effectiveTransportMode().allowsWifiDiscovery) {
+            _autoPairStatus.value = wifiAutoPairDisabledStatusMessage()
             return
         }
 
@@ -473,6 +582,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         _autoPairStatus.value = discoveredHostsStatus(hosts)
+    }
+
+    private fun currentBlePairingStatusOverride(): String? {
+        return BlePairingStatusResolver.resolveOverride(
+            allowsBle = effectiveTransportMode().allowsBle,
+            session = bleRos2Session.value,
+            udpReady = _isUdpRunning.value || bleRos2Session.value.udpReady || connectionManager.isUdpConnected(),
+            connectionState = bleConnectionState.value,
+            isScanning = isBleScanning.value,
+            pairedHostName = pairedHostName.value
+        )
     }
 
     private fun requestPairing(host: DiscoveryProtocol.DiscoveredHost) {
@@ -516,8 +636,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 preferredFamily = ack.selectedFamily,
                 controlPort = ack.controlPort
             )
+            configRepository.setTargetIpv4(ipv4Address)
+            configRepository.setTargetIpv6(ipv6Address)
             configRepository.setTargetIp(ack.address)
             configRepository.setTargetPort(ack.controlPort)
+            markPeerAddresses(ipv4Address, ipv6Address, PeerAddressSource.CACHED)
 
             _autoPairStatus.value = "已配对 $hostName"
             if (canStartUdp()) {
@@ -536,8 +659,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun setupBleRos2Bridge() {
         viewModelScope.launch {
             bleRos2Session.collect { session ->
+                refreshLocalNetworkSnapshot()
                 updateBleGatewayStatus(session)
                 applyBleGatewayTarget(session)
+                updateAutoPairStatus(discoveredHosts.value)
             }
         }
 
@@ -553,14 +678,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 if (state.connectionState == BluetoothProfile.STATE_CONNECTED) {
+                    updateBlePhase(BleLinkEvent.GATT_CONNECTED)
                     startBleService()
                     updateBleGatewayStatus(bleRos2Session.value)
                     return@collect
                 }
 
                 if (state.connectionState == BluetoothProfile.STATE_CONNECTING) {
+                    updateBlePhase(BleLinkEvent.CONNECTION_REQUESTED)
                     updateBleGatewayStatus(bleRos2Session.value)
                     return@collect
+                }
+
+                if (state.isScanning) {
+                    updateBlePhase(BleLinkEvent.SCAN_STARTED)
                 }
 
                 val ros2Gateway = selectBestRos2Gateway(state.scanResults)
@@ -580,7 +711,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun applyBleGatewayTarget(session: Ros2BleProfile.GatewaySession) {
         val transportMode = effectiveTransportMode()
-        if (!transportMode.allowsBle || !session.paired) {
+        if (!transportMode.allowsBle) {
+            return
+        }
+
+        val resolvedIpv4 = session.ipv4Address
+            ?: session.selectedAddress?.takeIf { session.selectedFamily == DiscoveryProtocol.AddressFamily.IPV4 }
+        val resolvedIpv6 = session.ipv6Address
+            ?: session.selectedAddress?.takeIf { session.selectedFamily == DiscoveryProtocol.AddressFamily.IPV6 }
+
+        if (!resolvedIpv4.isNullOrBlank() || !resolvedIpv6.isNullOrBlank()) {
+            markPeerAddresses(resolvedIpv4, resolvedIpv6, PeerAddressSource.BLE_SYNC)
+        }
+
+        if (bleConnectionState.value == BluetoothProfile.STATE_CONNECTED &&
+            (!resolvedIpv4.isNullOrBlank() || !resolvedIpv6.isNullOrBlank())
+        ) {
+            updateBlePhase(BleLinkEvent.ADDRESSES_SYNCED)
+        }
+
+        if (!session.paired) {
+            syncTransportDiagnostics()
             return
         }
 
@@ -592,14 +743,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val hostName = session.hostName.ifBlank { "ROS2 BLE Gateway" }
         val targetKey = listOf(hostId, session.sessionId.orEmpty(), selectedAddress, session.controlPort).joinToString("|")
         if (targetKey == lastAppliedBleTargetKey) {
+            if (session.udpReady) {
+                updateBlePhase(BleLinkEvent.UDP_READY)
+            }
+            syncTransportDiagnostics()
             return
         }
 
+        configRepository.setTargetIpv4(resolvedIpv4)
+        configRepository.setTargetIpv6(resolvedIpv6)
         configRepository.savePairedHost(
             hostId = hostId,
             hostName = hostName,
-            ipv4Address = session.ipv4Address,
-            ipv6Address = session.ipv6Address,
+            ipv4Address = resolvedIpv4,
+            ipv6Address = resolvedIpv6,
             preferredFamily = selectedFamily,
             controlPort = session.controlPort
         )
@@ -610,6 +767,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         lastAppliedBleTargetKey = targetKey
 
+        scheduleStalePairingCleanup(session)
+
+        if (session.udpReady) {
+            updateBlePhase(BleLinkEvent.UDP_READY)
+        }
+        syncTransportDiagnostics()
+
         if (transportMode.shouldAutoStartUdpFromBle && canStartUdp(transportMode)) {
             startUdp()
         }
@@ -618,20 +782,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateBleGatewayStatus(session: Ros2BleProfile.GatewaySession) {
         _bleGatewayStatus.value = when {
             !effectiveTransportMode().allowsBle -> bleDisabledStatusMessage()
-            bleConnectionState.value == BluetoothProfile.STATE_CONNECTING -> "BLE 正在连接 ROS2 网关"
+            _linkDiagnostics.value.blePhase == BleLinkPhase.COMMUNICATION_FAILED -> "蓝牙通信失败"
+            _linkDiagnostics.value.blePhase == BleLinkPhase.CONNECTION_FAILED -> "蓝牙连接失败"
+            bleConnectionState.value == BluetoothProfile.STATE_CONNECTING -> "蓝牙正在连接 ROS2 网关"
             effectiveTransportMode() == TransportIsolationMode.BLE_ONLY && session.bleOnlyControlReady ->
-                "BLE 已授权，纯 BLE 控制中"
+                "蓝牙已授权，纯蓝牙控制中"
             session.paired && session.udpReady -> {
                 val address = session.effectiveAddress ?: "-"
-                "BLE 已配对，UDP主通道: $address:${session.controlPort}"
+                "蓝牙已配对，UDP 主通道: $address:${session.controlPort}"
             }
             session.paired -> {
                 val address = session.effectiveAddress ?: "-"
-                "BLE 已配对，BLE兜底中: $address:${session.controlPort}"
+                "蓝牙已配对，蓝牙兜底中: $address:${session.controlPort}"
             }
-            bleConnectionState.value == BluetoothProfile.STATE_CONNECTED -> "BLE 已连接，等待短码配对"
+            bleConnectionState.value == BluetoothProfile.STATE_CONNECTED -> "蓝牙已连接，等待短码配对"
             isBleScanning.value -> "正在搜索 ROS2 BLE 网关"
-            else -> "BLE 网关未连接"
+            else -> "蓝牙网关未连接"
+        }
+    }
+
+    private fun scheduleStalePairingCleanup(session: Ros2BleProfile.GatewaySession) {
+        val staleAddress = pairedHostAddress.value ?: return
+        val sessionKey = listOf(
+            staleAddress,
+            session.hostId,
+            session.ipv4Address.orEmpty(),
+            session.ipv6Address.orEmpty()
+        ).joinToString("|")
+        if (lastStaleProbeKey == sessionKey) {
+            return
+        }
+        lastStaleProbeKey = sessionKey
+
+        addressSyncScope.launch {
+            val probeSucceeded = PingUtil.isReachable(
+                ip = staleAddress,
+                family = PingUtil.inferFamily(staleAddress),
+                timeoutMs = 1500
+            )
+            val shouldClear = AddressSyncPolicy.shouldClearStalePairing(
+                staleAddress = staleAddress,
+                peerIpv4 = session.ipv4Address,
+                peerIpv6 = session.ipv6Address,
+                probeSucceeded = probeSucceeded,
+                bleConnected = bleConnectionState.value == BluetoothProfile.STATE_CONNECTED
+            )
+            if (!shouldClear) {
+                return@launch
+            }
+            configRepository.clearPairing()
+            _linkDiagnostics.value = _linkDiagnostics.value.copy(stalePairingCleared = true)
+            LogUtil.w("旧配对地址已失效，已清理并切换到蓝牙同步地址")
         }
     }
 
@@ -656,17 +857,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 when (event) {
                     is ConnectionManager.ConnectionEvent.Error -> {
                         udpStartInProgress = false
+                        if (event.transport == "BLE") {
+                            updateBlePhase(BleLinkEvent.COMMUNICATION_ERROR)
+                            showToast("蓝牙连接失败", 1000)
+                        } else if (event.transport == "UDP") {
+                            if (bleConnectionState.value == BluetoothProfile.STATE_CONNECTED) {
+                                updateBlePhase(BleLinkEvent.UDP_FAILED)
+                            }
+                            syncTransportDiagnostics()
+                        }
                         _showErrorDialog.value = event.errorCode
                     }
                     is ConnectionManager.ConnectionEvent.Connecting -> {
-                        // Handle connecting event
+                        if (event.transport == "BLE") {
+                            updateBlePhase(BleLinkEvent.CONNECTION_REQUESTED)
+                        }
                     }
                     is ConnectionManager.ConnectionEvent.Connected -> {
-                        showToast("${event.transport} Connected", 1000)
+                        if (event.transport == "BLE") {
+                            updateBlePhase(BleLinkEvent.GATT_CONNECTED)
+                            showToast("蓝牙连接成功", 1000)
+                        } else if (event.transport == "UDP") {
+                            updateBlePhase(BleLinkEvent.UDP_READY)
+                        }
+                        syncTransportDiagnostics()
                     }
                     is ConnectionManager.ConnectionEvent.Disconnected -> {
                         udpStartInProgress = false
-                        showToast("${event.transport} Disconnected", 1000)
+                        if (event.transport == "BLE") {
+                            updateBlePhase(
+                                if (event.errorCode == null) {
+                                    BleLinkEvent.CONNECTION_LOST
+                                } else {
+                                    BleLinkEvent.CONNECTION_FAILED
+                                }
+                            )
+                            showToast("蓝牙连接失败", 1000)
+                        } else if (event.transport == "UDP" &&
+                            bleConnectionState.value == BluetoothProfile.STATE_CONNECTED
+                        ) {
+                            updateBlePhase(BleLinkEvent.UDP_FAILED)
+                        }
+                        syncTransportDiagnostics()
                     }
                 }
             }
@@ -677,6 +909,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isUdpRunning.value = state.udpState.isConnected
                 if (state.udpState.isConnected) {
                     udpStartInProgress = false
+                    updateBlePhase(BleLinkEvent.UDP_READY)
                 }
                 if (!state.udpState.isConnected &&
                     shouldUseWifiAutoPair(connectionMode.value, transportIsolationMode.value) &&
@@ -684,6 +917,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     startAutoDiscovery()
                     evaluateAutoPairing(discoveredHosts.value)
                 }
+                syncTransportDiagnostics()
             }
         }
     }
@@ -710,6 +944,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Config
     val targetIp: StateFlow<String> = configRepository.targetIp
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "192.168.1.83")
+
+    val targetIpv4: StateFlow<String?> = configRepository.targetIpv4
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val targetIpv6: StateFlow<String?> = configRepository.targetIpv6
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val targetPort: StateFlow<Int> = configRepository.targetPort
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1387)
@@ -738,12 +978,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val pairedHostAddress: StateFlow<String?> = configRepository.pairedHostAddress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val pairedHostFamily: StateFlow<DiscoveryProtocol.AddressFamily?> = configRepository.pairedHostFamily
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val pairedControlPort: StateFlow<Int?> = configRepository.pairedControlPort
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val discoveredHosts: StateFlow<List<DiscoveryProtocol.DiscoveredHost>> = wifiDiscoveryManager.discoveredHosts
 
     init {
+        refreshLocalNetworkSnapshot()
         setupUsbHid()
         setupConnectionManager()
         setupFrequencyManager()
@@ -751,6 +995,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             transportIsolationMode.collect { mode ->
                 updateTransportModeDependentState(mode)
+            }
+        }
+        viewModelScope.launch {
+            combine(targetIpv4, targetIpv6) { ipv4, ipv6 ->
+                NetworkAddressSnapshot(ipv4 = ipv4, ipv6 = ipv6)
+            }.collect { snapshot ->
+                if (bleRos2Session.value.ipv4Address.isNullOrBlank() && bleRos2Session.value.ipv6Address.isNullOrBlank()) {
+                    _linkDiagnostics.value = _linkDiagnostics.value.copy(peerAddresses = snapshot)
+                }
             }
         }
         setupAutoPairing()
@@ -800,8 +1053,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateTargetIp(ip: String) {
         clearLaunchOverrides()
+        val normalizedIp = UdpEndpointConfig.normalizeTargetAddress(ip)
         viewModelScope.launch {
-            configRepository.setTargetIp(UdpEndpointConfig.normalizeTargetAddress(ip))
+            configRepository.setTargetIp(normalizedIp)
+            when (PingUtil.inferFamily(normalizedIp)) {
+                PingUtil.IpFamily.IPV4 -> configRepository.setTargetIpv4(normalizedIp)
+                PingUtil.IpFamily.IPV6 -> configRepository.setTargetIpv6(normalizedIp)
+            }
+        }
+    }
+
+    fun updateTargetIpv4(ip: String) {
+        clearLaunchOverrides()
+        val normalizedIp = UdpEndpointConfig.normalizeTargetAddress(ip)
+        viewModelScope.launch {
+            configRepository.setTargetIpv4(normalizedIp.ifBlank { null })
+            if (normalizedIp.isNotBlank() && currentPreferredFamily() != DiscoveryProtocol.AddressFamily.IPV6) {
+                configRepository.setTargetIp(normalizedIp)
+            }
+            markPeerAddresses(normalizedIp.ifBlank { null }, targetIpv6.value, PeerAddressSource.MANUAL)
+        }
+    }
+
+    fun updateTargetIpv6(ip: String) {
+        clearLaunchOverrides()
+        val normalizedIp = UdpEndpointConfig.normalizeTargetAddress(ip)
+        viewModelScope.launch {
+            configRepository.setTargetIpv6(normalizedIp.ifBlank { null })
+            if (normalizedIp.isNotBlank()) {
+                configRepository.setTargetIp(normalizedIp)
+            }
+            markPeerAddresses(targetIpv4.value, normalizedIp.ifBlank { null }, PeerAddressSource.MANUAL)
         }
     }
 
@@ -827,31 +1109,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * @param ip 目标IP地址
      */
     fun performPing(ip: String) {
-        viewModelScope.launch {
+        val family = PingUtil.inferFamily(ip)
+        val slot = if (family == PingUtil.IpFamily.IPV4) PingSlot.PEER_IPV4 else PingSlot.PEER_IPV6
+        performPing(slot, ip)
+    }
+
+    fun performPing(slot: PingSlot, ip: String) {
+        pingScope.launch {
             _isPinging.value = true
+            _pingInFlight.value = _pingInFlight.value + slot
             _pingResult.value = null
+            refreshLocalNetworkSnapshot()
             try {
                 val normalizedAddress = UdpEndpointConfig.normalizeTargetAddress(ip)
                 if (normalizedAddress.isBlank()) {
-                    _pingResult.value = PingUtil.PingResult(
+                    val errorResult = PingUtil.PingResult(
                         ip = ip,
+                        family = if (slot.name.endsWith("IPV6")) PingUtil.IpFamily.IPV6 else PingUtil.IpFamily.IPV4,
                         isSuccess = false,
                         errorMessage = "目标地址不能为空"
                     )
+                    _pingResult.value = errorResult
+                    _pingResults.value = _pingResults.value + (slot to errorResult)
                     return@launch
                 }
-                val result = PingUtil.ping(normalizedAddress)
+                val family = if (slot.name.endsWith("IPV6")) PingUtil.IpFamily.IPV6 else PingUtil.IpFamily.IPV4
+                val result = PingUtil.ping(normalizedAddress, family)
                 _pingResult.value = result
+                _pingResults.value = _pingResults.value + (slot to result)
                 Log.d("MainViewModel", "Ping result: ${result.formatResult()}")
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Ping failed", e)
-                _pingResult.value = PingUtil.PingResult(
+                val errorResult = PingUtil.PingResult(
                     ip = ip,
+                    family = if (slot.name.endsWith("IPV6")) PingUtil.IpFamily.IPV6 else PingUtil.IpFamily.IPV4,
                     isSuccess = false,
                     errorMessage = e.message ?: "Ping失败"
                 )
+                _pingResult.value = errorResult
+                _pingResults.value = _pingResults.value + (slot to errorResult)
             } finally {
-                _isPinging.value = false
+                _pingInFlight.value = _pingInFlight.value - slot
+                _isPinging.value = _pingInFlight.value.isNotEmpty()
             }
         }
     }
@@ -861,6 +1160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun clearPingResult() {
         _pingResult.value = null
+        _pingResults.value = emptyMap()
     }
 
     fun clearUdpValidationError() {
@@ -964,6 +1264,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _bleGatewayStatus.value = "正在搜索 ROS2 BLE 网关"
+        updateBlePhase(BleLinkEvent.SCAN_STARTED)
         bleManager.startScan()
     }
 
@@ -976,10 +1277,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _bleGatewayStatus.value = "正在连接 ${device.device.name ?: device.device.address}"
+        updateBlePhase(BleLinkEvent.CONNECTION_REQUESTED)
         bleManager.connect(device.device)
     }
     
     fun disconnectBle() {
+        updateBlePhase(BleLinkEvent.CONNECTION_LOST)
         bleManager.disconnect()
         stopBleService()
     }
@@ -1036,6 +1339,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         udpStartInProgress = true
+        _linkDiagnostics.value = _linkDiagnostics.value.copy(udpState = UdpLinkState.VERIFYING)
         viewModelScope.launch(Dispatchers.IO) {
             val validationResult = UdpEndpointConfig.validate(
                 targetAddress = effectiveTargetIp(),
@@ -1100,6 +1404,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startServiceSafely(intent, "UdpService stop")
         udpStartInProgress = false
         _isUdpRunning.value = false
+        syncTransportDiagnostics()
     }
     
     fun updateVirtualLeftStick(x: Float, y: Float) {
@@ -1189,8 +1494,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun applyDebugTargetIp(ip: String) {
+        val normalizedIp = UdpEndpointConfig.normalizeTargetAddress(ip)
         viewModelScope.launch {
-            configRepository.setTargetIp(UdpEndpointConfig.normalizeTargetAddress(ip))
+            configRepository.setTargetIp(normalizedIp)
+            when (PingUtil.inferFamily(normalizedIp)) {
+                PingUtil.IpFamily.IPV4 -> configRepository.setTargetIpv4(normalizedIp)
+                PingUtil.IpFamily.IPV6 -> configRepository.setTargetIpv6(normalizedIp)
+            }
         }
     }
 
@@ -1336,9 +1646,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         frequencyManager.shutdown()
         heartbeatManager.shutdown()
         reconnectManager.shutdown()
+        diagnosticsScope.cancel()
+        addressSyncScope.cancel()
+        pingScope.cancel()
         bleServiceRetryJob?.cancel()
         bleManager.shutdown()
     }
+}
+
+private fun NetworkUtil.AddressSnapshot.toNetworkAddressSnapshot(): NetworkAddressSnapshot {
+    return NetworkAddressSnapshot(ipv4 = ipv4, ipv6 = ipv6)
 }
 
 sealed class ExportStatus {

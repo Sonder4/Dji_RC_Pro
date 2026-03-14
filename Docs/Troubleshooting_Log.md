@@ -1,7 +1,7 @@
 # 问题诊断与修复记录
 
-**文档版本**: 1.0  
-**最后更新**: 2026-02-01  
+**文档版本**: 1.1  
+**最后更新**: 2026-03-15  
 **记录范围**: UDP通信模块调试全过程
 
 ---
@@ -12,8 +12,9 @@
 2. [问题一：Connection reset by peer](#2-问题一connection-reset-by-peer)
 3. [问题二：UDP服务启动后立即停止](#3-问题二udp服务启动后立即停止)
 4. [问题三：Socket绑定到IPv6地址](#4-问题三socket绑定到ipv6地址)
-5. [调试方法与工具](#5-调试方法与工具)
-6. [修复验证](#6-修复验证)
+5. [问题四：IPv4 Ping 失败但 IPv6 与 UDP 正常](#5-问题四ipv4-ping-失败但-ipv6-与-udp-正常)
+6. [调试方法与工具](#6-调试方法与工具)
+7. [修复验证](#7-修复验证)
 
 ---
 
@@ -26,6 +27,7 @@
 | 1 | 外部软件发送UDP数据时出现 "Connection reset by peer" 错误 | 高 | ✅ 已修复 |
 | 2 | UDP服务启动后立即停止，无法持续发送数据 | 高 | ✅ 已修复 |
 | 3 | Socket绑定到IPv6地址 `::/::` 而非IPv4地址 | 中 | ✅ 已修复 |
+| 4 | IPv4 双向 Ping 失败，但 IPv6 与 UDP 主通道正常 | 高 | ✅ 已定位 |
 
 ---
 
@@ -304,7 +306,88 @@ D/UdpService: Socket successfully bound to /192.168.1.86:1346
 
 ---
 
-## 5. 调试方法与工具
+## 5. 问题四：IPv4 Ping 失败但 IPv6 与 UDP 正常
+
+### 5.1 问题现象
+
+现场表现为：
+
+- App 中 IPv4 Ping 长期失败
+- 主机与 RC Pro 间 IPv4 无法互相 `ping`
+- BLE 配对、IPv6 通信和 UDP 主通道仍可正常建立
+
+### 5.2 现场证据
+
+主机到 RC Pro 的 IPv4：
+
+```bash
+ping -c 1 10.202.200.141
+```
+
+结果：
+
+```text
+1 packets transmitted, 0 received, 100% packet loss
+```
+
+RC Pro 到主机的 IPv4：
+
+```bash
+adb shell ping -c 1 -W 1 10.202.168.216
+```
+
+结果：
+
+```text
+From 10.202.200.141: Destination Host Unreachable
+```
+
+邻居表也显示二层发现失败：
+
+```bash
+ip neigh show 10.202.200.141
+adb shell ip neigh show 10.202.168.216
+```
+
+结果分别为：
+
+- 主机：`FAILED`
+- RC Pro：`INCOMPLETE`
+
+与此同时，IPv6 双向测试成功：
+
+```bash
+ping -6 -c 1 <RC_PRO_IPV6>
+adb shell ping6 -c 1 <HOST_IPV6>
+```
+
+### 5.3 根本原因
+
+这不是 App 内部 Ping 逻辑本身导致的失败，而是当前 Wi-Fi 网络环境对 IPv4 终端间通信进行了隔离。常见原因包括：
+
+1. AP 开启客户端隔离
+2. 同一 SSID 下被划分到不同二层或 VLAN
+3. 校园网或企业网只允许终端对外访问，不允许终端间 ARP 互通
+
+### 5.4 结论
+
+- IPv4 Ping 失败：优先判断为网络环境问题
+- IPv6 链路：当前现场测试稳定可用
+- UDP 通信：在 IPv6 主通道下可正常工作
+
+### 5.5 处理建议
+
+如果需要稳定的 IPv4 UDP 控制链路，推荐改为“电脑开热点给 RC Pro 连接”：
+
+- 电脑作为 AP
+- RC Pro 直接连接电脑热点
+- 使用本地私网 IPv4，例如 `10.42.0.0/24`
+
+这样可以绕开外部 Wi-Fi 的客户端隔离问题。
+
+---
+
+## 6. 调试方法与工具
 
 ### 5.1 ADB命令
 
@@ -376,9 +459,9 @@ Log.e(TAG, "transmissionLoop: frequencyManager is null")  // 错误
 
 ---
 
-## 6. 修复验证
+## 7. 修复验证
 
-### 6.1 功能验证清单
+### 7.1 功能验证清单
 
 | 验证项 | 方法 | 结果 |
 |-------|------|------|
@@ -389,7 +472,7 @@ Log.e(TAG, "transmissionLoop: frequencyManager is null")  // 错误
 | USB HID转发 | 操作摇杆查看日志 | ✅ 数据转发 |
 | 外部连接 | Python脚本发送数据 | ✅ 正常接收 |
 
-### 6.2 性能验证
+### 7.2 性能验证
 
 | 指标 | 目标值 | 实测值 | 状态 |
 |-----|-------|-------|------|
@@ -398,7 +481,7 @@ Log.e(TAG, "transmissionLoop: frequencyManager is null")  // 错误
 | 数据延迟 | < 50ms | ~20ms | ✅ |
 | 丢包率 | < 1% | ~0% | ✅ |
 
-### 6.3 稳定性验证
+### 7.3 稳定性验证
 
 - ✅ 连续运行1小时无崩溃
 - ✅ 网络断开后自动重连
@@ -406,9 +489,9 @@ Log.e(TAG, "transmissionLoop: frequencyManager is null")  // 错误
 
 ---
 
-## 7. 经验总结
+## 8. 经验总结
 
-### 7.1 关键教训
+### 8.1 关键教训
 
 1. **初始化顺序至关重要**
    - 服务启动前必须确保所有依赖已初始化
@@ -422,7 +505,7 @@ Log.e(TAG, "transmissionLoop: frequencyManager is null")  // 错误
    - 关键节点必须记录日志
    - 错误信息要详细明确
 
-### 7.2 最佳实践
+### 8.2 最佳实践
 
 ```kotlin
 // 1. 使用ConcurrentLinkedQueue保证线程安全
@@ -447,7 +530,7 @@ while (frequencyManager == null && waitCount < 20) {
 
 ---
 
-## 8. 相关文档
+## 9. 相关文档
 
 - [技术文档总览](./Technical_Documentation.md)
 - [UDP模块详细文档](./UDP_Module.md)
@@ -457,4 +540,4 @@ while (frequencyManager == null && waitCount < 20) {
 ---
 
 **记录维护**: NCU-RC2026 开发团队  
-**最后更新**: 2026-02-01
+**最后更新**: 2026-03-15

@@ -1,7 +1,7 @@
 # 部署与使用指南
 
-**文档版本**: 1.0  
-**最后更新**: 2026-02-01  
+**文档版本**: 1.1  
+**最后更新**: 2026-03-15  
 **适用范围**: DJI RC Pro Controller App (NCU-RC2026)
 
 ---
@@ -14,6 +14,7 @@
 4. [安装部署](#4-安装部署)
 5. [使用指南](#5-使用指南)
 6. [故障排除](#6-故障排除)
+7. [电脑热点直连 RC Pro](#7-电脑热点直连-rc-pro)
 
 ---
 
@@ -358,9 +359,99 @@ E/UdpService: Failed to bind socket on port 1346
 
 ---
 
-## 7. 更新维护
+## 7. 电脑热点直连 RC Pro
 
-### 7.1 更新应用
+当现网 IPv4 被隔离、但希望稳定使用 UDP 时，推荐由 Ubuntu 电脑直接开启热点给 RC Pro 连接。
+
+### 7.1 适用场景
+
+- 当前 Wi-Fi 下 IPv4 双向 Ping 失败
+- 需要固定、可控的本地 IPv4 网段
+- 需要优先保证 ROS2 UDP 控制链路稳定
+
+### 7.2 创建热点
+
+```bash
+nmcli connection add type wifi ifname wlo1 con-name rcpro-hotspot autoconnect no ssid RCProHotspot
+nmcli connection modify rcpro-hotspot \
+  802-11-wireless.mode ap \
+  802-11-wireless.band bg \
+  ipv4.method shared \
+  ipv4.addresses 10.42.0.1/24 \
+  ipv6.method disabled \
+  wifi-sec.key-mgmt wpa-psk \
+  wifi-sec.psk NCURC2026
+nmcli connection up rcpro-hotspot
+```
+
+说明：
+
+- 热点接口为 `wlo1`
+- 电脑热点地址固定为 `10.42.0.1`
+- RC Pro 连入后通常会拿到 `10.42.0.x`
+- 开热点后电脑会从当前外部 Wi-Fi 断开，这是正常行为
+
+### 7.3 RC Pro 连接与验证
+
+1. 在 RC Pro 上打开 Wi-Fi
+2. 连接 `RCProHotspot`
+3. 输入密码 `NCURC2026`
+4. 验证 RC Pro 是否拿到 IPv4：
+
+```bash
+adb shell ip -4 addr show wlan0
+```
+
+### 7.4 ROS2 端启动
+
+```bash
+cd /home/xuan/Tools/Dji_RC_Pro
+TRANSPORT_MODE=ble_udp ./scripts/run_dji_rc_pro_gateway.sh
+```
+
+如果已有后台会话，建议重启：
+
+```bash
+tmux kill-session -t rcpro_ros2_bleudp
+tmux new-session -d -s rcpro_ros2_bleudp 'cd /home/xuan/Tools/Dji_RC_Pro && TRANSPORT_MODE=ble_udp ./scripts/run_dji_rc_pro_gateway.sh'
+```
+
+### 7.5 App 配置建议
+
+- 传输模式：`BLE + UDP`
+- 优先地址族：IPv4
+- 手动模式下目标 IPv4：`10.42.0.1`
+- 控制端口：`1387`
+
+### 7.6 防火墙
+
+如果主机启用了 `ufw`，需要放行：
+
+```bash
+sudo ufw allow 1387/udp
+sudo ufw allow 1388/udp
+```
+
+### 7.7 快速验证
+
+```bash
+# 主机 Ping RC Pro
+ping -c 1 10.42.0.2
+
+# RC Pro Ping 主机
+adb shell ping -c 1 -W 1 10.42.0.1
+
+# ROS2 查看链路状态
+source /opt/ros/humble/setup.bash
+source /home/xuan/Tools/Dji_RC_Pro/ros2_ws_dji_rc_pro/install/setup.bash
+timeout 5s ros2 topic echo --once /dji_rc_pro_bridge/transport_status
+```
+
+---
+
+## 8. 更新维护
+
+### 8.1 更新应用
 
 ```bash
 # 1. 拉取最新代码
@@ -373,7 +464,7 @@ git pull origin main
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 7.2 备份配置
+### 8.2 备份配置
 
 应用配置存储在设备本地，卸载后会丢失。如需保留：
 
@@ -387,7 +478,7 @@ adb restore dji_rc_pro_backup.ab
 
 ---
 
-## 8. 相关文档
+## 9. 相关文档
 
 - [技术文档总览](./Technical_Documentation.md)
 - [UDP模块详细文档](./UDP_Module.md)
@@ -397,4 +488,4 @@ adb restore dji_rc_pro_backup.ab
 ---
 
 **文档维护**: NCU-RC2026 开发团队  
-**最后更新**: 2026-02-01
+**最后更新**: 2026-03-15

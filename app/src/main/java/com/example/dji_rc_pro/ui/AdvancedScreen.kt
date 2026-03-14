@@ -24,12 +24,12 @@ import com.example.dji_rc_pro.viewmodel.MainViewModel
 
 private fun getBleStateString(state: Int): String {
     return when (state) {
-        0 -> "DISCONNECTED"
-        1 -> "SCANNING"
-        2 -> "CONNECTING"
-        3 -> "CONNECTED"
-        4 -> "DISCONNECTING"
-        else -> "UNKNOWN($state)"
+        0 -> "未连接"
+        1 -> "扫描中"
+        2 -> "连接中"
+        3 -> "已连接"
+        4 -> "断开中"
+        else -> "未知($state)"
     }
 }
 
@@ -47,6 +47,7 @@ fun AdvancedScreen(
     val bleScanResults by viewModel.bleScanResults.collectAsState()
     val showErrorDialog by viewModel.showErrorDialog.collectAsState()
     val showBleDialog by viewModel.showBleDialog.collectAsState()
+    val linkDiagnostics by viewModel.linkDiagnostics.collectAsState()
 
     var showLogsDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -86,12 +87,12 @@ fun AdvancedScreen(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = "返回",
                     tint = Color.White
                 )
             }
             Text(
-                text = "Advanced Settings",
+                text = "高级设置",
                 color = Color.White,
                 style = MaterialTheme.typography.titleMedium
             )
@@ -115,16 +116,38 @@ fun AdvancedScreen(
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
-                    text = "Connection Info",
+                    text = "连接信息",
                     color = Color.White,
                     style = MaterialTheme.typography.titleSmall
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                ConnectionInfoRow("State", connectionState.overallState.name)
-                ConnectionInfoRow("BLE State", getBleStateString(bleConnectionState))
-                ConnectionInfoRow("Frequency", "$frequencyHz Hz")
-                ConnectionInfoRow("Heartbeat", heartbeatStatus.overallHealth.name)
-                ConnectionInfoRow("Reconnecting", reconnectState.isReconnecting.toString())
+                ConnectionInfoRow("整体状态", connectionState.overallState.name)
+                ConnectionInfoRow("BLE 状态", linkDiagnostics.bleStatusLabel)
+                ConnectionInfoRow("UDP 状态", linkDiagnostics.udpState.label)
+                ConnectionInfoRow("主通道", linkDiagnostics.currentPrimaryTransport)
+                ConnectionInfoRow("频率", "$frequencyHz Hz")
+                ConnectionInfoRow("心跳", heartbeatStatus.overallHealth.name)
+                ConnectionInfoRow("重连中", if (reconnectState.isReconnecting) "是" else "否")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "双端地址",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                ConnectionInfoRow("本机 IPv4", linkDiagnostics.localAddresses.ipv4 ?: "-")
+                ConnectionInfoRow("本机 IPv6", linkDiagnostics.localAddresses.ipv6 ?: "-")
+                ConnectionInfoRow("对端 IPv4", linkDiagnostics.peerAddresses.ipv4 ?: "-")
+                ConnectionInfoRow("对端 IPv6", linkDiagnostics.peerAddresses.ipv6 ?: "-")
             }
         }
 
@@ -139,14 +162,14 @@ fun AdvancedScreen(
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
             ) {
-                Text("Settings")
+                Text("设置")
             }
             Button(
                 onClick = { showLogsDialog = true },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
             ) {
-                Text("Logs")
+                Text("日志")
             }
             Button(
                 onClick = { viewModel.showBleDialog() },
@@ -155,7 +178,7 @@ fun AdvancedScreen(
                     containerColor = if (bleConnectionState == BluetoothProfile.STATE_CONNECTED) Color.Blue else Color.Gray
                 )
             ) {
-                Text(if (bleConnectionState == BluetoothProfile.STATE_CONNECTED) "BLE ON" else "BLE OFF")
+                Text(if (bleConnectionState == BluetoothProfile.STATE_CONNECTED) "BLE 已连接" else "BLE 未连接")
             }
         }
 
@@ -169,15 +192,15 @@ fun AdvancedScreen(
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
-                    text = "Statistics",
+                    text = "统计信息",
                     color = Color.White,
                     style = MaterialTheme.typography.titleSmall
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                StatsRow("UDP Packets", connectionState.toString())
-                StatsRow("BLE Packets", bleConnectionState.toString())
-                StatsRow("Missed Heartbeats", "${heartbeatStatus.udpMissedCount}")
-                StatsRow("Reconnect Attempts", "${reconnectState.attemptCount}")
+                StatsRow("UDP 数据", connectionState.toString())
+                StatsRow("BLE 状态码", bleConnectionState.toString())
+                StatsRow("心跳丢失", "${heartbeatStatus.udpMissedCount}")
+                StatsRow("重连次数", "${reconnectState.attemptCount}")
             }
         }
 
@@ -188,7 +211,7 @@ fun AdvancedScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan)
         ) {
-            Text("Frequency Settings", color = Color.Black)
+            Text("频率设置", color = Color.Black)
         }
     }
 
@@ -242,7 +265,7 @@ fun AdvancedBleDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("BLE Device Scan") },
+        title = { Text("BLE 设备扫描") },
         text = {
             Column {
                 Row(
@@ -250,14 +273,14 @@ fun AdvancedBleDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     if (isScanning) {
-                        Text("Scanning...", color = Color.Blue)
+                        Text("扫描中...", color = Color.Blue)
                         TextButton(onClick = onStopScan) {
-                            Text("Stop")
+                            Text("停止")
                         }
                     } else {
-                        Text("Not scanning")
+                        Text("未扫描")
                         Button(onClick = onScan) {
-                            Text("Scan")
+                            Text("开始")
                         }
                     }
                 }
@@ -268,7 +291,7 @@ fun AdvancedBleDialog(
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                     ) {
-                        Text("Disconnect")
+                        Text("断开连接")
                     }
                 }
 
@@ -291,7 +314,7 @@ fun AdvancedBleDialog(
                             ) {
                                 Column {
                                     Text(
-                                        text = device.device.name ?: "Unknown",
+                                        text = device.device.name ?: "未知设备",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                     Text(
@@ -300,13 +323,13 @@ fun AdvancedBleDialog(
                                     )
                                 }
                                 if (connectionState == BluetoothProfile.STATE_CONNECTED) {
-                                    Text("Connected", color = Color.Green)
+                                    Text("已连接", color = Color.Green)
                                 } else {
                                     Button(
                                         onClick = { onConnect(device.device) },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
-                                        Text("Connect")
+                                        Text("连接")
                                     }
                                 }
                             }
@@ -317,7 +340,7 @@ fun AdvancedBleDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text("关闭")
             }
         }
     )
@@ -332,10 +355,10 @@ fun SettingsLogDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Settings & Logs") },
+        title = { Text("设置与日志") },
         text = {
             Column {
-                Text("Recent Logs:", style = MaterialTheme.typography.titleSmall)
+                Text("最近日志：", style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn(
                     modifier = Modifier
@@ -354,7 +377,7 @@ fun SettingsLogDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text("关闭")
             }
         }
     )
@@ -370,7 +393,7 @@ fun LogsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Application Logs") },
+        title = { Text("应用日志") },
         text = {
             LazyColumn(
                 modifier = Modifier
@@ -393,7 +416,7 @@ fun LogsDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text("关闭")
             }
         }
     )

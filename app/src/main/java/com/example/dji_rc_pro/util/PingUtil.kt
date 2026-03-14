@@ -16,11 +16,17 @@ object PingUtil {
     private const val DEFAULT_PACKET_COUNT = 4
     private const val DEFAULT_TIMEOUT_SECONDS = 5
 
+    enum class IpFamily(val label: String) {
+        IPV4("IPv4"),
+        IPV6("IPv6"),
+    }
+
     /**
      * Ping结果数据类
      */
     data class PingResult(
         val ip: String,
+        val family: IpFamily,
         val isSuccess: Boolean,
         val packetsSent: Int = 0,
         val packetsReceived: Int = 0,
@@ -37,14 +43,44 @@ object PingUtil {
             return if (isSuccess) {
                 buildString {
                     appendLine("Ping $ip:")
+                    appendLine("地址族: ${family.label}")
                     appendLine("✓ 成功 ($packetsReceived/$packetsSent 包, $packetLossPercent% 丢失)")
                     if (packetsReceived > 0) {
                         appendLine("延迟: 最短=${minTimeMs}ms, 最长=${maxTimeMs}ms, 平均=${avgTimeMs}ms")
                     }
                 }.trim()
             } else {
-                "Ping $ip: ✗ 失败${if (errorMessage.isNotEmpty()) " - $errorMessage" else ""}"
+                "Ping $ip (${family.label}): ✗ 失败${if (errorMessage.isNotEmpty()) " - $errorMessage" else ""}"
             }
+        }
+    }
+
+    fun inferFamily(ip: String): IpFamily = if (ip.contains(':')) IpFamily.IPV6 else IpFamily.IPV4
+
+    fun buildCommand(
+        ip: String,
+        family: IpFamily,
+        packetCount: Int = DEFAULT_PACKET_COUNT,
+        timeoutSeconds: Int = DEFAULT_TIMEOUT_SECONDS
+    ): List<String> {
+        return when (family) {
+            IpFamily.IPV4 -> listOf(
+                "/system/bin/ping",
+                "-4",
+                "-c",
+                packetCount.toString(),
+                "-W",
+                timeoutSeconds.toString(),
+                ip
+            )
+            IpFamily.IPV6 -> listOf(
+                "/system/bin/ping6",
+                "-c",
+                packetCount.toString(),
+                "-W",
+                timeoutSeconds.toString(),
+                ip
+            )
         }
     }
 
@@ -58,13 +94,12 @@ object PingUtil {
      */
     suspend fun ping(
         ip: String,
+        family: IpFamily = inferFamily(ip),
         packetCount: Int = DEFAULT_PACKET_COUNT,
         timeoutSeconds: Int = DEFAULT_TIMEOUT_SECONDS
     ): PingResult = withContext(Dispatchers.IO) {
         try {
-            // 构建ping命令
-            // Android使用 -c 参数指定包数量，-W 指定超时（秒）
-            val process = ProcessBuilder("/system/bin/ping", "-c", packetCount.toString(), "-W", timeoutSeconds.toString(), ip)
+            val process = ProcessBuilder(buildCommand(ip, family, packetCount, timeoutSeconds))
                 .redirectErrorStream(true)
                 .start()
 
@@ -81,12 +116,13 @@ object PingUtil {
             process.waitFor()
 
             // 解析ping结果
-            parsePingOutput(ip, output.toString())
+            parsePingOutput(ip, family, output.toString())
 
         } catch (e: Exception) {
             Log.e(TAG, "Ping failed", e)
             PingResult(
                 ip = ip,
+                family = family,
                 isSuccess = false,
                 errorMessage = e.message ?: "未知错误"
             )
@@ -100,9 +136,20 @@ object PingUtil {
      * @param timeoutMs 超时时间（毫秒）
      * @return 是否可达
      */
-    suspend fun isReachable(ip: String, timeoutMs: Int = 3000): Boolean = withContext(Dispatchers.IO) {
+    suspend fun isReachable(
+        ip: String,
+        family: IpFamily = inferFamily(ip),
+        timeoutMs: Int = 3000
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val process = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", (timeoutMs / 1000).toString(), ip)
+            val process = ProcessBuilder(
+                buildCommand(
+                    ip = ip,
+                    family = family,
+                    packetCount = 1,
+                    timeoutSeconds = (timeoutMs / 1000).coerceAtLeast(1)
+                )
+            )
                 .redirectErrorStream(true)
                 .start()
             
@@ -117,7 +164,7 @@ object PingUtil {
     /**
      * 解析ping命令输出
      */
-    private fun parsePingOutput(ip: String, output: String): PingResult {
+    private fun parsePingOutput(ip: String, family: IpFamily, output: String): PingResult {
         try {
             var packetsSent = 0
             var packetsReceived = 0
@@ -170,6 +217,7 @@ object PingUtil {
 
             return PingResult(
                 ip = ip,
+                family = family,
                 isSuccess = isSuccess,
                 packetsSent = packetsSent,
                 packetsReceived = packetsReceived,
@@ -183,6 +231,7 @@ object PingUtil {
             Log.e(TAG, "Failed to parse ping output", e)
             return PingResult(
                 ip = ip,
+                family = family,
                 isSuccess = false,
                 errorMessage = "解析结果失败: ${e.message}"
             )

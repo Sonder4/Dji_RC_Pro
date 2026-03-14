@@ -34,6 +34,7 @@
 #include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 
+#include "dji_rc_pro_bridge/client_address_snapshot.hpp"
 #include "dji_rc_pro_bridge/msg/chassis_ctrl.hpp"
 #include "protocol/protocol_parser.hpp"
 
@@ -323,6 +324,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     raw_topic_ = this->declare_parameter<std::string>("raw_topic", "/dji_rc_pro_bridge/chassis_ctrl_raw");
     status_topic_ = this->declare_parameter<std::string>("status_topic", "/mcu_comm_node/status");
     ble_frame_topic_ = this->declare_parameter<std::string>("ble_frame_topic", "/dji_rc_pro_bridge/ble/control_frame");
+    ble_session_status_topic_ = this->declare_parameter<std::string>("ble_session_status_topic", "/dji_rc_pro_bridge/ble/session_status");
     transport_status_topic_ = this->declare_parameter<std::string>("transport_status_topic", "/dji_rc_pro_bridge/transport_status");
     ble_fallback_holdoff_ms_ = this->declare_parameter<int>("ble_fallback_holdoff_ms", 1500);
 
@@ -345,6 +347,9 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     ble_frame_subscription_ = this->create_subscription<std_msgs::msg::UInt8MultiArray>(
         ble_frame_topic_, 10,
         [this](const std_msgs::msg::UInt8MultiArray::SharedPtr msg) { this->HandleBleFrame(msg); });
+    ble_session_status_subscription_ = this->create_subscription<std_msgs::msg::String>(
+        ble_session_status_topic_, 10,
+        [this](const std_msgs::msg::String::SharedPtr msg) { this->HandleBleSessionStatus(msg); });
     status_subscription_ = this->create_subscription<std_msgs::msg::Header>(
         status_topic_, 10,
         [this](const std_msgs::msg::Header::SharedPtr msg) {
@@ -418,10 +423,30 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     std::string client_name;
     std::string client_nonce;
     std::string client_address;
+    std::string client_ipv4;
+    std::string client_ipv6;
+    std::string selected_address;
     std::string session_id;
     AddressFamily family = AddressFamily::kIpv4;
     std::chrono::steady_clock::time_point expires_at = std::chrono::steady_clock::time_point::min();
   };
+
+  static dji_rc_pro_bridge::ClientAddressFamily ToClientAddressFamily(AddressFamily family) {
+    return family == AddressFamily::kIpv4
+               ? dji_rc_pro_bridge::ClientAddressFamily::kIpv4
+               : dji_rc_pro_bridge::ClientAddressFamily::kIpv6;
+  }
+
+  static dji_rc_pro_bridge::ClientAddressSnapshot ToClientAddressSnapshot(const LeaseState& state) {
+    return dji_rc_pro_bridge::ClientAddressSnapshot{state.client_ipv4, state.client_ipv6};
+  }
+
+  static void ApplyClientAddressSnapshot(
+      const dji_rc_pro_bridge::ClientAddressSnapshot& snapshot,
+      LeaseState* state) {
+    state->client_ipv4 = snapshot.ipv4;
+    state->client_ipv6 = snapshot.ipv6;
+  }
 
   int discovery_ipv4_socket_{-1};
   int discovery_ipv6_socket_{-1};
@@ -450,6 +475,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
   std::string raw_topic_;
   std::string status_topic_;
   std::string ble_frame_topic_;
+  std::string ble_session_status_topic_;
   std::string transport_status_topic_;
   int control_port_{kDefaultControlPort};
   int discovery_port_{kDefaultDiscoveryPort};
@@ -463,6 +489,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
   rclcpp::Publisher<dji_rc_pro_bridge::msg::ChassisCtrl>::SharedPtr raw_publisher_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr transport_status_publisher_;
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr ble_frame_subscription_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr ble_session_status_subscription_;
   rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr status_subscription_;
   rclcpp::TimerBase::SharedPtr lease_timer_;
 
@@ -770,6 +797,9 @@ class DjiRcProGatewayNode : public rclcpp::Node {
         lease_state_.client_name = client_name;
         lease_state_.client_nonce = client_nonce;
         lease_state_.client_address = client_address;
+        const auto merged = dji_rc_pro_bridge::MergeClientAddressSnapshot(
+            ToClientAddressSnapshot(lease_state_), ToClientAddressFamily(family), client_address);
+        ApplyClientAddressSnapshot(merged, &lease_state_);
         lease_state_.family = family;
         lease_state_.expires_at = now + std::chrono::milliseconds(lease_ms_);
         session_id = lease_state_.session_id;
@@ -779,12 +809,20 @@ class DjiRcProGatewayNode : public rclcpp::Node {
 
     if (accept) {
       const HostAddresses addresses = CollectHostAddresses();
+      std::string client_ipv4;
+      std::string client_ipv6;
       std::string selected_address = family == AddressFamily::kIpv6 ? addresses.ipv6 : addresses.ipv4;
       if (selected_address.empty()) {
         selected_address = family == AddressFamily::kIpv6 ? addresses.ipv4 : addresses.ipv6;
       }
       if (selected_address.empty()) {
         selected_address = family == AddressFamily::kIpv6 ? "::" : "0.0.0.0";
+      }
+      {
+        std::lock_guard<std::mutex> lock(lease_mutex_);
+        lease_state_.selected_address = selected_address;
+        client_ipv4 = lease_state_.client_ipv4;
+        client_ipv6 = lease_state_.client_ipv6;
       }
 
       const std::string ack_proof = HmacSha256Hex(
@@ -814,9 +852,14 @@ class DjiRcProGatewayNode : public rclcpp::Node {
           {"proof", ack_proof},
       });
       SendDiscoveryReply(socket_fd, payload, peer, peer_len);
-      RCLCPP_INFO(this->get_logger(), "Paired client=%s peer=%s family=%s control=%s:%d",
+      RCLCPP_INFO(this->get_logger(),
+                  "Paired client=%s peer=%s family=%s control=%s:%d host_ipv4=%s host_ipv6=%s client_ipv4=%s client_ipv6=%s",
                   client_id.c_str(), client_address.c_str(), AddressFamilyToWire(family).c_str(),
-                  selected_address.c_str(), control_port_);
+                  selected_address.c_str(), control_port_,
+                  addresses.ipv4.empty() ? "-" : addresses.ipv4.c_str(),
+                  addresses.ipv6.empty() ? "-" : addresses.ipv6.c_str(),
+                  client_ipv4.empty() ? "-" : client_ipv4.c_str(),
+                  client_ipv6.empty() ? "-" : client_ipv6.c_str());
       return;
     }
 
@@ -929,17 +972,25 @@ class DjiRcProGatewayNode : public rclcpp::Node {
             lease_state_.client_id = "ble_promoted_udp_peer";
             lease_state_.client_name = "BLEPromotedPeer";
             lease_state_.client_address = client_address;
+            const auto merged = dji_rc_pro_bridge::MergeClientAddressSnapshot(
+                ToClientAddressSnapshot(lease_state_), ToClientAddressFamily(family), client_address);
+            ApplyClientAddressSnapshot(merged, &lease_state_);
             lease_state_.family = family;
             lease_state_.expires_at = now + std::chrono::milliseconds(lease_ms_);
             RCLCPP_INFO(this->get_logger(),
-                        "Promoted BLE-authorized peer=%s family=%s to UDP lease session=%s",
+                        "Promoted BLE-authorized peer=%s family=%s to UDP lease session=%s client_ipv4=%s client_ipv6=%s",
                         client_address.c_str(),
                         family == AddressFamily::kIpv6 ? "ipv6" : "ipv4",
-                        lease_state_.session_id.c_str());
+                        lease_state_.session_id.c_str(),
+                        lease_state_.client_ipv4.empty() ? "-" : lease_state_.client_ipv4.c_str(),
+                        lease_state_.client_ipv6.empty() ? "-" : lease_state_.client_ipv6.c_str());
           }
           if (lease_state_.client_address != client_address || lease_state_.family != family) {
             continue;
           }
+          const auto merged = dji_rc_pro_bridge::MergeClientAddressSnapshot(
+              ToClientAddressSnapshot(lease_state_), ToClientAddressFamily(family), client_address);
+          ApplyClientAddressSnapshot(merged, &lease_state_);
           lease_state_.expires_at = now + std::chrono::milliseconds(lease_ms_);
         }
 
@@ -978,6 +1029,30 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     HandleControlPayload(payload, ble_parser_);
   }
 
+  void HandleBleSessionStatus(const std_msgs::msg::String::SharedPtr msg) {
+    const auto fields = ParseFields(msg->data);
+    const auto type_it = fields.find("type");
+    if (type_it == fields.end() || type_it->second != "ble_session_status") {
+      return;
+    }
+
+    dji_rc_pro_bridge::ClientAddressSnapshot incoming;
+    if (const auto ipv4_it = fields.find("client_ipv4"); ipv4_it != fields.end()) {
+      incoming.ipv4 = ipv4_it->second;
+    }
+    if (const auto ipv6_it = fields.find("client_ipv6"); ipv6_it != fields.end()) {
+      incoming.ipv6 = ipv6_it->second;
+    }
+    if (incoming.ipv4.empty() && incoming.ipv6.empty()) {
+      return;
+    }
+
+    std::lock_guard<std::mutex> lock(lease_mutex_);
+    const auto merged = dji_rc_pro_bridge::MergeNonEmptyClientAddresses(
+        ToClientAddressSnapshot(lease_state_), incoming);
+    ApplyClientAddressSnapshot(merged, &lease_state_);
+  }
+
   void PublishTransportStatus() {
     std_msgs::msg::String message;
     const int64_t now_ms = MonotonicMillis();
@@ -985,14 +1060,43 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     const int64_t last_ble_ms = last_ble_frame_monotonic_ms_.load();
     const bool udp_active = last_udp_ms > 0 && (now_ms - last_udp_ms) <= 2000;
     const bool ble_active = last_ble_ms > 0 && (now_ms - last_ble_ms) <= 2000;
+    const HostAddresses addresses = CollectHostAddresses();
+    LeaseState lease_snapshot;
+    bool lease_active = false;
+    {
+      std::lock_guard<std::mutex> lock(lease_mutex_);
+      lease_snapshot = lease_state_;
+      lease_active = IsLeaseActiveLocked(std::chrono::steady_clock::now());
+    }
+    const std::string ble_state = !AllowsBleTransport()
+                                      ? "disabled"
+                                      : (lease_active ? (udp_active ? "udp_primary" : "ble_active") : "idle");
+    const std::string primary_transport = udp_active ? "udp" : (ble_active ? "ble" : "none");
     message.data = BuildMessage({
         {"type", "transport_status"},
         {"host_id", host_id_},
         {"udp_active", udp_active ? "1" : "0"},
         {"ble_active", ble_active ? "1" : "0"},
         {"mcu_ready", mcu_ready_.load() ? "1" : "0"},
+        {"host_ipv4", addresses.ipv4},
+        {"host_ipv6", addresses.ipv6},
+        {"client_ipv4", lease_snapshot.client_ipv4},
+        {"client_ipv6", lease_snapshot.client_ipv6},
+        {"selected_family", AddressFamilyToWire(lease_snapshot.family)},
+        {"selected_address", lease_snapshot.selected_address},
+        {"ble_state", ble_state},
+        {"primary_transport", primary_transport},
     });
     transport_status_publisher_->publish(message);
+    RCLCPP_INFO_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000,
+        "transport_status ble_state=%s primary=%s host_ipv4=%s host_ipv6=%s client_ipv4=%s client_ipv6=%s",
+        ble_state.c_str(),
+        primary_transport.c_str(),
+        addresses.ipv4.empty() ? "-" : addresses.ipv4.c_str(),
+        addresses.ipv6.empty() ? "-" : addresses.ipv6.c_str(),
+        lease_snapshot.client_ipv4.empty() ? "-" : lease_snapshot.client_ipv4.c_str(),
+        lease_snapshot.client_ipv6.empty() ? "-" : lease_snapshot.client_ipv6.c_str());
   }
 
   void PublishChassisControl(const std::vector<uint8_t>& data) {

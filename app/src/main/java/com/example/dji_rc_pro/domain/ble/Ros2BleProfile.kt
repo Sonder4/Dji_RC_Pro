@@ -26,6 +26,8 @@ object Ros2BleProfile {
         val sessionId: String? = null,
         val ipv4Address: String? = null,
         val ipv6Address: String? = null,
+        val clientIpv4Address: String? = null,
+        val clientIpv6Address: String? = null,
         val preferredFamily: DiscoveryProtocol.AddressFamily? = null,
         val selectedFamily: DiscoveryProtocol.AddressFamily? = null,
         val selectedAddress: String? = null,
@@ -54,7 +56,9 @@ object Ros2BleProfile {
         val clientNonce: String,
         val pairCode: String,
         val supportIpv4: Boolean = true,
-        val supportIpv6: Boolean = true
+        val supportIpv6: Boolean = true,
+        val clientIpv4: String? = null,
+        val clientIpv6: String? = null
     )
 
     data class PendingPairContext(
@@ -74,14 +78,18 @@ object Ros2BleProfile {
         clientSeed: String,
         pairCode: String,
         supportIpv4: Boolean = true,
-        supportIpv6: Boolean = true
+        supportIpv6: Boolean = true,
+        clientIpv4: String? = null,
+        clientIpv6: String? = null
     ): PairProbeState {
         return PairProbeState(
             clientId = stableWireId(clientSeed),
             clientNonce = randomWireToken(),
             pairCode = pairCode,
             supportIpv4 = supportIpv4,
-            supportIpv6 = supportIpv6
+            supportIpv6 = supportIpv6,
+            clientIpv4 = clientIpv4,
+            clientIpv6 = clientIpv6
         )
     }
 
@@ -89,7 +97,15 @@ object Ros2BleProfile {
         val supportMask = supportMask(state.supportIpv4, state.supportIpv6)
         val proof = compactProof(
             state.pairCode,
-            listOf("p", COMPACT_VERSION, state.clientId, state.clientNonce, supportMask)
+            listOf(
+                "p",
+                COMPACT_VERSION,
+                state.clientId,
+                state.clientNonce,
+                supportMask,
+                state.clientIpv4.orEmpty(),
+                state.clientIpv6.orEmpty()
+            )
         )
         return buildKeyValuePayload(
             linkedMapOf(
@@ -98,6 +114,8 @@ object Ros2BleProfile {
                 "c" to state.clientId,
                 "n" to state.clientNonce,
                 "x" to supportMask,
+                "4" to state.clientIpv4,
+                "6" to state.clientIpv6,
                 "m" to proof
             )
         )
@@ -124,6 +142,8 @@ object Ros2BleProfile {
         val selectedFamily = compactFamilyFromWire(fields["f"]) ?: return null
         val selectedAddress = fields["a"]?.takeIf { it.isNotBlank() } ?: return null
         val proof = fields["m"] ?: return null
+        val hostIpv4 = fields["host_ipv4"]?.takeIf { it.isNotBlank() }
+        val hostIpv6 = fields["host_ipv6"]?.takeIf { it.isNotBlank() }
 
         if (clientId != probeState.clientId || clientNonce != probeState.clientNonce) {
             return null
@@ -150,6 +170,10 @@ object Ros2BleProfile {
             return null
         }
 
+        val resolvedIpv4 = hostIpv4
+            ?: selectedAddress.takeIf { selectedFamily == DiscoveryProtocol.AddressFamily.IPV4 }
+        val resolvedIpv6 = hostIpv6
+            ?: selectedAddress.takeIf { selectedFamily == DiscoveryProtocol.AddressFamily.IPV6 }
         return DiscoveryProtocol.DiscoveredHost(
             hostId = hostId,
             hostName = hostId,
@@ -159,8 +183,8 @@ object Ros2BleProfile {
             busy = busy,
             leaseMs = leaseMs,
             hostNonce = hostNonce,
-            ipv4Address = selectedAddress.takeIf { selectedFamily == DiscoveryProtocol.AddressFamily.IPV4 },
-            ipv6Address = selectedAddress.takeIf { selectedFamily == DiscoveryProtocol.AddressFamily.IPV6 },
+            ipv4Address = resolvedIpv4,
+            ipv6Address = resolvedIpv6,
             selectedFamily = selectedFamily,
             lastSeenAtMs = nowMs
         )
@@ -333,20 +357,29 @@ object Ros2BleProfile {
             val selectedFamily = compactFamilyFromWire(fields["f"])
             val preferredFamily = compactFamilyFromWire(fields["pf"]) ?: selectedFamily
             val ipv4 = fields["4"]?.takeIf { it.isNotBlank() }
+                ?: fields["host_ipv4"]?.takeIf { it.isNotBlank() }
             val ipv6 = fields["6"]?.takeIf { it.isNotBlank() }
+                ?: fields["host_ipv6"]?.takeIf { it.isNotBlank() }
             val selectedAddress = fields["a"]?.takeIf { it.isNotBlank() }
                 ?: when (selectedFamily ?: preferredFamily) {
                     DiscoveryProtocol.AddressFamily.IPV6 -> ipv6 ?: ipv4
                     DiscoveryProtocol.AddressFamily.IPV4 -> ipv4 ?: ipv6
                     null -> ipv6 ?: ipv4
                 }
+            val (resolvedIpv4, resolvedIpv6) = resolvedHostAddresses(ipv4, ipv6, selectedAddress, selectedFamily ?: preferredFamily)
             val hostId = fields["h"] ?: current.hostId
             return current.copy(
                 hostId = hostId,
                 hostName = current.hostName.ifBlank { hostId },
                 sessionId = fields["s"] ?: current.sessionId,
-                ipv4Address = ipv4 ?: current.ipv4Address,
-                ipv6Address = ipv6 ?: current.ipv6Address,
+                ipv4Address = resolvedIpv4 ?: current.ipv4Address,
+                ipv6Address = resolvedIpv6 ?: current.ipv6Address,
+                clientIpv4Address = fields["c4"]?.takeIf { it.isNotBlank() }
+                    ?: fields["client_ipv4"]?.takeIf { it.isNotBlank() }
+                    ?: current.clientIpv4Address,
+                clientIpv6Address = fields["c6"]?.takeIf { it.isNotBlank() }
+                    ?: fields["client_ipv6"]?.takeIf { it.isNotBlank() }
+                    ?: current.clientIpv6Address,
                 preferredFamily = preferredFamily ?: current.preferredFamily,
                 selectedFamily = selectedFamily ?: current.selectedFamily ?: preferredFamily,
                 selectedAddress = selectedAddress ?: current.selectedAddress,
@@ -364,20 +397,25 @@ object Ros2BleProfile {
         val preferredFamily = DiscoveryProtocol.AddressFamily.fromWireValue(fields["preferred_family"])
         val selectedFamily = DiscoveryProtocol.AddressFamily.fromWireValue(fields["selected_family"])
         val ipv4 = fields["ipv4"]?.takeIf { it.isNotBlank() }
+            ?: fields["host_ipv4"]?.takeIf { it.isNotBlank() }
         val ipv6 = fields["ipv6"]?.takeIf { it.isNotBlank() }
+            ?: fields["host_ipv6"]?.takeIf { it.isNotBlank() }
         val selectedAddress = fields["selected_address"]?.takeIf { it.isNotBlank() }
             ?: when (selectedFamily ?: preferredFamily) {
                 DiscoveryProtocol.AddressFamily.IPV6 -> ipv6 ?: ipv4
                 DiscoveryProtocol.AddressFamily.IPV4 -> ipv4 ?: ipv6
                 null -> ipv6 ?: ipv4
             }
+        val (resolvedIpv4, resolvedIpv6) = resolvedHostAddresses(ipv4, ipv6, selectedAddress, selectedFamily ?: preferredFamily)
 
         return current.copy(
             hostId = fields["host_id"] ?: current.hostId,
             hostName = fields["host_name"] ?: current.hostName,
             sessionId = fields["session_id"] ?: current.sessionId,
-            ipv4Address = ipv4 ?: current.ipv4Address,
-            ipv6Address = ipv6 ?: current.ipv6Address,
+            ipv4Address = resolvedIpv4 ?: current.ipv4Address,
+            ipv6Address = resolvedIpv6 ?: current.ipv6Address,
+            clientIpv4Address = fields["client_ipv4"]?.takeIf { it.isNotBlank() } ?: current.clientIpv4Address,
+            clientIpv6Address = fields["client_ipv6"]?.takeIf { it.isNotBlank() } ?: current.clientIpv6Address,
             preferredFamily = preferredFamily ?: current.preferredFamily,
             selectedFamily = selectedFamily ?: current.selectedFamily ?: preferredFamily,
             selectedAddress = selectedAddress ?: current.selectedAddress,
@@ -392,13 +430,29 @@ object Ros2BleProfile {
         val fields = parseKeyValuePayload(payload)
         if (fields["v"] == COMPACT_VERSION && fields["t"] == "s") {
             val selectedFamily = compactFamilyFromWire(fields["f"])
+            val selectedAddress = fields["a"]?.takeIf { it.isNotBlank() } ?: current.selectedAddress
+            val ipv4 = fields["4"]?.takeIf { it.isNotBlank() }
+                ?: fields["host_ipv4"]?.takeIf { it.isNotBlank() }
+                ?: current.ipv4Address
+            val ipv6 = fields["6"]?.takeIf { it.isNotBlank() }
+                ?: fields["host_ipv6"]?.takeIf { it.isNotBlank() }
+                ?: current.ipv6Address
+            val (resolvedIpv4, resolvedIpv6) = resolvedHostAddresses(ipv4, ipv6, selectedAddress, selectedFamily ?: current.selectedFamily)
             val hostId = fields["h"] ?: current.hostId
             return current.copy(
                 hostId = hostId,
                 hostName = current.hostName.ifBlank { hostId },
                 sessionId = fields["s"] ?: current.sessionId,
+                ipv4Address = resolvedIpv4,
+                ipv6Address = resolvedIpv6,
+                clientIpv4Address = fields["c4"]?.takeIf { it.isNotBlank() }
+                    ?: fields["client_ipv4"]?.takeIf { it.isNotBlank() }
+                    ?: current.clientIpv4Address,
+                clientIpv6Address = fields["c6"]?.takeIf { it.isNotBlank() }
+                    ?: fields["client_ipv6"]?.takeIf { it.isNotBlank() }
+                    ?: current.clientIpv6Address,
                 selectedFamily = selectedFamily ?: current.selectedFamily,
-                selectedAddress = fields["a"]?.takeIf { it.isNotBlank() } ?: current.selectedAddress,
+                selectedAddress = selectedAddress,
                 controlPort = fields["p"]?.toIntOrNull() ?: current.controlPort,
                 udpReady = fields["u"] == "1",
                 bleReady = fields["b"] == "1",
@@ -412,18 +466,50 @@ object Ros2BleProfile {
         }
 
         val selectedFamily = DiscoveryProtocol.AddressFamily.fromWireValue(fields["selected_family"])
+        val selectedAddress = fields["selected_address"]?.takeIf { it.isNotBlank() } ?: current.selectedAddress
+        val ipv4 = fields["ipv4"]?.takeIf { it.isNotBlank() }
+            ?: fields["host_ipv4"]?.takeIf { it.isNotBlank() }
+            ?: current.ipv4Address
+        val ipv6 = fields["ipv6"]?.takeIf { it.isNotBlank() }
+            ?: fields["host_ipv6"]?.takeIf { it.isNotBlank() }
+            ?: current.ipv6Address
+        val (resolvedIpv4, resolvedIpv6) = resolvedHostAddresses(ipv4, ipv6, selectedAddress, selectedFamily ?: current.selectedFamily)
         return current.copy(
             hostId = fields["host_id"] ?: current.hostId,
             hostName = fields["host_name"] ?: current.hostName,
             sessionId = fields["session_id"] ?: current.sessionId,
+            ipv4Address = resolvedIpv4,
+            ipv6Address = resolvedIpv6,
+            clientIpv4Address = fields["client_ipv4"]?.takeIf { it.isNotBlank() } ?: current.clientIpv4Address,
+            clientIpv6Address = fields["client_ipv6"]?.takeIf { it.isNotBlank() } ?: current.clientIpv6Address,
             selectedFamily = selectedFamily ?: current.selectedFamily,
-            selectedAddress = fields["selected_address"]?.takeIf { it.isNotBlank() } ?: current.selectedAddress,
+            selectedAddress = selectedAddress,
             controlPort = fields["control_port"]?.toIntOrNull() ?: current.controlPort,
             udpReady = fields["udp_ready"] == "1",
             bleReady = fields["ble_ready"] == "1",
             mcuReady = fields["mcu_ready"] == "1",
             paired = fields["paired"] == "1" || current.paired
         )
+    }
+
+    private fun resolvedHostAddresses(
+        ipv4: String?,
+        ipv6: String?,
+        selectedAddress: String?,
+        selectedFamily: DiscoveryProtocol.AddressFamily?
+    ): Pair<String?, String?> {
+        var resolvedIpv4 = ipv4
+        var resolvedIpv6 = ipv6
+        when (selectedFamily) {
+            DiscoveryProtocol.AddressFamily.IPV4 -> if (resolvedIpv4.isNullOrBlank()) {
+                resolvedIpv4 = selectedAddress
+            }
+            DiscoveryProtocol.AddressFamily.IPV6 -> if (resolvedIpv6.isNullOrBlank()) {
+                resolvedIpv6 = selectedAddress
+            }
+            null -> Unit
+        }
+        return resolvedIpv4 to resolvedIpv6
     }
 
     private fun supportMask(ipv4: Boolean, ipv6: Boolean): String {

@@ -219,6 +219,8 @@ class LeaseState:
     client_id: str = ''
     client_name: str = ''
     client_nonce: str = ''
+    client_ipv4: str = ''
+    client_ipv6: str = ''
     session_id: str = ''
     selected_family: str = ''
     selected_address: str = ''
@@ -432,6 +434,7 @@ class Ros2BleGatewayNode(Node):
         self.lease_ms = int(self.declare_parameter('lease_ms', DEFAULT_LEASE_MS).value)
         self.require_ready_for_pairing = bool(self.declare_parameter('require_ready_for_pairing', False).value)
         self.transport_status_topic = str(self.declare_parameter('transport_status_topic', '/dji_rc_pro_bridge/transport_status').value)
+        self.ble_session_status_topic = str(self.declare_parameter('ble_session_status_topic', '/dji_rc_pro_bridge/ble/session_status').value)
         self.ble_frame_topic = str(self.declare_parameter('ble_frame_topic', '/dji_rc_pro_bridge/ble/control_frame').value)
         self.status_topic = str(self.declare_parameter('status_topic', '/mcu_comm_node/status').value)
 
@@ -441,6 +444,7 @@ class Ros2BleGatewayNode(Node):
         self.lease = LeaseState()
         self.pending_offer: Dict[str, str] = {}
         self.last_transport_status: Dict[str, str] = {}
+        self.last_transport_status_summary = ''
         self.last_address_refresh_monotonic = 0.0
         self.last_ble_control_log_monotonic = 0.0
         self.last_ble_drop_log_monotonic = 0.0
@@ -449,6 +453,7 @@ class Ros2BleGatewayNode(Node):
         self._refresh_addresses(force=True)
 
         self.ble_frame_publisher = self.create_publisher(UInt8MultiArray, self.ble_frame_topic, 10)
+        self.ble_session_status_publisher = self.create_publisher(String, self.ble_session_status_topic, 10)
         self.create_subscription(String, self.transport_status_topic, self._on_transport_status, 10)
         self.create_subscription(Header, self.status_topic, self._on_mcu_status, 10)
         self.create_timer(0.5, self._on_housekeeping_timer)
@@ -583,6 +588,14 @@ class Ros2BleGatewayNode(Node):
         fields = parse_fields(msg.data)
         self.last_transport_status = fields
         self.udp_active = fields.get('udp_active', '0') == '1'
+        summary = (
+            f"ble_state={fields.get('ble_state', '-')} primary={fields.get('primary_transport', '-')} "
+            f"host_ipv4={fields.get('host_ipv4', '-')} host_ipv6={fields.get('host_ipv6', '-')} "
+            f"client_ipv4={fields.get('client_ipv4', '-')} client_ipv6={fields.get('client_ipv6', '-')}"
+        )
+        if summary != self.last_transport_status_summary:
+            self.last_transport_status_summary = summary
+            self.get_logger().info(f'transport_status update {summary}')
 
     def _on_mcu_status(self, msg: Header):
         self.mcu_ready = msg.frame_id == 'connected'
@@ -592,6 +605,7 @@ class Ros2BleGatewayNode(Node):
         if not self._lease_active() and self.lease.client_id:
             self.get_logger().info(f'BLE lease expired for client={self.lease.client_id}')
             self._clear_lease()
+        self.publish_ble_session_status()
 
     def _refresh_addresses(self, force: bool = False):
         now = time.monotonic()
@@ -610,6 +624,30 @@ class Ros2BleGatewayNode(Node):
     def _clear_lease(self):
         self.lease = LeaseState()
         self.pending_offer = {}
+
+    def build_ble_session_status_message(self) -> str:
+        payload = build_message({
+            'type': 'ble_session_status',
+            'host_id': self.host_id,
+            'transport_mode': self.transport_mode,
+            'udp_active': '1' if self.udp_active else '0',
+            'mcu_ready': '1' if self.mcu_ready else '0',
+            'lease_active': '1' if self._lease_active() else '0',
+            'session_id': self.lease.session_id or None,
+            'selected_family': self.lease.selected_family or None,
+            'selected_address': self.lease.selected_address or None,
+            'client_ipv4': self.lease.client_ipv4 or None,
+            'client_ipv6': self.lease.client_ipv6 or None,
+            'host_ipv4': self.ipv4_address,
+            'host_ipv6': self.ipv6_address,
+            'ble_state': self._ble_state_value(),
+        })
+        return payload.decode('utf-8')
+
+    def publish_ble_session_status(self):
+        message = String()
+        message.data = self.build_ble_session_status_message()
+        self.ble_session_status_publisher.publish(message)
 
     def _is_ready(self) -> bool:
         return (not self.require_ready_for_pairing) or self.mcu_ready
@@ -635,6 +673,24 @@ class Ros2BleGatewayNode(Node):
             self.lease.selected_address = selected_address
         return selected_family, selected_address, preferred_family
 
+    def _extract_client_ip_fields(self, fields: Dict[str, str]) -> Tuple[str, str]:
+        return (
+            fields.get('c4', fields.get('client_ipv4', fields.get('4', ''))),
+            fields.get('c6', fields.get('client_ipv6', fields.get('6', ''))),
+        )
+
+    def _client_ip_summary(self) -> str:
+        return f'client_ipv4={self.lease.client_ipv4 or "-"} client_ipv6={self.lease.client_ipv6 or "-"}'
+
+    def _ble_state_value(self) -> str:
+        if not self._ble_enabled():
+            return 'disabled'
+        if self._lease_active():
+            return 'udp_primary' if self.udp_active else 'ble_active'
+        if self.pending_offer:
+            return 'pairing'
+        return 'idle'
+
     def _authorize_ble_only_client(
         self,
         client_id: str,
@@ -642,6 +698,8 @@ class Ros2BleGatewayNode(Node):
         client_nonce: str,
         support_ipv4: bool,
         support_ipv6: bool,
+        client_ipv4: str = '',
+        client_ipv6: str = '',
     ) -> bool:
         if not self._is_ready():
             self.get_logger().warning(f'BLE-only auth rejected client={client_id}: host not ready')
@@ -658,6 +716,8 @@ class Ros2BleGatewayNode(Node):
             client_id=client_id,
             client_name=client_name,
             client_nonce=client_nonce,
+            client_ipv4=client_ipv4,
+            client_ipv6=client_ipv6,
             session_id=session_id,
             selected_family=selected_family or '',
             selected_address=selected_address or '',
@@ -668,7 +728,9 @@ class Ros2BleGatewayNode(Node):
         self.pending_offer = {}
         endpoint = f'{selected_family}:{selected_address}' if selected_family and selected_address else '-'
         self.get_logger().info(
-            f'BLE-only auth accepted client={client_id} session={session_id} endpoint={endpoint}'
+            f'BLE-only auth accepted client={client_id} session={session_id} endpoint={endpoint} '
+            f'host_ipv4={self.ipv4_address or "-"} host_ipv6={self.ipv6_address or "-"} '
+            f'client_ipv4={client_ipv4 or "-"} client_ipv6={client_ipv6 or "-"}'
         )
         return True
 
@@ -681,12 +743,19 @@ class Ros2BleGatewayNode(Node):
             's': self.lease.session_id or None,
             '4': self.ipv4_address,
             '6': self.ipv6_address,
+            'host_ipv4': self.ipv4_address,
+            'host_ipv6': self.ipv6_address,
+            'c4': self.lease.client_ipv4 or None,
+            'c6': self.lease.client_ipv6 or None,
+            'client_ipv4': self.lease.client_ipv4 or None,
+            'client_ipv6': self.lease.client_ipv6 or None,
             'pf': compact_family_to_wire(preferred_family),
             'f': compact_family_to_wire(selected_family),
             'a': selected_address,
             'p': str(self.control_port),
             'l': str(self.lease_ms),
             'b': '1' if self._lease_active() else '0',
+            'ble_state': self._ble_state_value(),
         })
 
     def build_status_payload(self) -> bytes:
@@ -703,6 +772,13 @@ class Ros2BleGatewayNode(Node):
             'b': '1' if self._lease_active() else '0',
             'k': '1' if self.mcu_ready else '0',
             'd': '1' if self._lease_active() else '0',
+            'host_ipv4': self.ipv4_address,
+            'host_ipv6': self.ipv6_address,
+            'c4': self.lease.client_ipv4 or None,
+            'c6': self.lease.client_ipv6 or None,
+            'client_ipv4': self.lease.client_ipv4 or None,
+            'client_ipv6': self.lease.client_ipv6 or None,
+            'ble_state': self._ble_state_value(),
         })
 
     def handle_pair_control_write(self, payload: bytes) -> Optional[bytes]:
@@ -748,11 +824,17 @@ class Ros2BleGatewayNode(Node):
         if not client_id or not client_nonce or not proof:
             return None
 
-        expected = compact_hmac_token(
+        client_ipv4, client_ipv6 = self._extract_client_ip_fields(fields)
+
+        expected_legacy = compact_hmac_token(
             self.pair_code,
             ['p', BLE_COMPACT_VERSION, client_id, client_nonce, support_mask],
         )
-        if proof != expected:
+        expected_with_ip = compact_hmac_token(
+            self.pair_code,
+            ['p', BLE_COMPACT_VERSION, client_id, client_nonce, support_mask, client_ipv4, client_ipv6],
+        )
+        if proof != expected_legacy and proof != expected_with_ip:
             self.get_logger().warning(f'Rejected compact BLE probe from client={client_id}: invalid proof')
             return None
 
@@ -765,6 +847,8 @@ class Ros2BleGatewayNode(Node):
                 client_nonce=client_nonce,
                 support_ipv4=support_ipv4,
                 support_ipv6=support_ipv6,
+                client_ipv4=client_ipv4,
+                client_ipv6=client_ipv6,
             )
             return None
 
@@ -779,6 +863,8 @@ class Ros2BleGatewayNode(Node):
             'client_nonce': client_nonce,
             'support_ipv4': '1' if support_ipv4 else '0',
             'support_ipv6': '1' if support_ipv6 else '0',
+            'client_ipv4': client_ipv4,
+            'client_ipv6': client_ipv6,
         }
         family_wire = compact_family_to_wire(selected_family)
         offer_proof = compact_hmac_token(
@@ -799,7 +885,10 @@ class Ros2BleGatewayNode(Node):
             ],
         )
         self.get_logger().info(
-            f'Compact BLE offer sent client={client_id} ready={ready} busy={busy} family={selected_family} address={selected_address}:{self.control_port}'
+            f'Compact BLE offer sent client={client_id} ready={ready} busy={busy} '
+            f'family={selected_family} address={selected_address}:{self.control_port} '
+            f'host_ipv4={self.ipv4_address or "-"} host_ipv6={self.ipv6_address or "-"} '
+            f'client_ipv4={client_ipv4 or "-"} client_ipv6={client_ipv6 or "-"}'
         )
         return build_message({
             'v': BLE_COMPACT_VERSION,
@@ -812,6 +901,8 @@ class Ros2BleGatewayNode(Node):
             'l': str(self.lease_ms),
             'f': family_wire,
             'a': selected_address,
+            'host_ipv4': self.ipv4_address,
+            'host_ipv6': self.ipv6_address,
             'r': '1' if ready else '0',
             'b': '1' if busy else '0',
             'm': offer_proof,
@@ -845,6 +936,8 @@ class Ros2BleGatewayNode(Node):
 
         support_ipv4 = self.pending_offer.get('support_ipv4', '1') == '1'
         support_ipv6 = self.pending_offer.get('support_ipv6', '1') == '1'
+        client_ipv4 = self.pending_offer.get('client_ipv4', '')
+        client_ipv6 = self.pending_offer.get('client_ipv6', '')
         selected_family, selected_address, _ = self._choose_endpoint(support_ipv4, support_ipv6)
         if not selected_family or not selected_address:
             return self._build_compact_busy_response(client_id, client_nonce, 'no_address')
@@ -855,6 +948,8 @@ class Ros2BleGatewayNode(Node):
             client_id=client_id,
             client_name='DJI_RC_Pro',
             client_nonce=client_nonce,
+            client_ipv4=client_ipv4,
+            client_ipv6=client_ipv6,
             session_id=session_id,
             selected_family=selected_family,
             selected_address=selected_address,
@@ -879,7 +974,9 @@ class Ros2BleGatewayNode(Node):
             ],
         )
         self.get_logger().info(
-            f'Compact BLE paired client={client_id} family={selected_family} address={selected_address}:{self.control_port}'
+            f'Compact BLE paired client={client_id} family={selected_family} address={selected_address}:{self.control_port} '
+            f'host_ipv4={self.ipv4_address or "-"} host_ipv6={self.ipv6_address or "-"} '
+            f'{self._client_ip_summary()}'
         )
         return build_message({
             'v': BLE_COMPACT_VERSION,
@@ -890,6 +987,8 @@ class Ros2BleGatewayNode(Node):
             'p': str(self.control_port),
             'f': family_wire,
             'a': selected_address,
+            'host_ipv4': self.ipv4_address,
+            'host_ipv6': self.ipv6_address,
             'm': ack_proof,
         })
 
@@ -915,6 +1014,7 @@ class Ros2BleGatewayNode(Node):
         proof = fields.get('proof', '')
         support_ipv4 = fields.get('support_ipv4', '1') == '1'
         support_ipv6 = fields.get('support_ipv6', '1') == '1'
+        client_ipv4, client_ipv6 = self._extract_client_ip_fields(fields)
         if not client_id or not client_nonce or not proof:
             return None
 
@@ -930,6 +1030,8 @@ class Ros2BleGatewayNode(Node):
                 client_nonce=client_nonce,
                 support_ipv4=support_ipv4,
                 support_ipv6=support_ipv6,
+                client_ipv4=client_ipv4,
+                client_ipv6=client_ipv6,
             )
             return None
 
@@ -940,6 +1042,8 @@ class Ros2BleGatewayNode(Node):
             'client_nonce': client_nonce,
             'support_ipv4': '1' if support_ipv4 else '0',
             'support_ipv6': '1' if support_ipv6 else '0',
+            'client_ipv4': client_ipv4,
+            'client_ipv6': client_ipv6,
         }
         offer_proof = hmac_hex(
             self.pair_code,
@@ -954,7 +1058,11 @@ class Ros2BleGatewayNode(Node):
                 str(self.lease_ms),
             ]),
         )
-        self.get_logger().info(f'BLE offer sent to client={client_id} ready={self._is_ready()} busy={busy}')
+        self.get_logger().info(
+            f'BLE offer sent to client={client_id} ready={self._is_ready()} busy={busy} '
+            f'host_ipv4={self.ipv4_address or "-"} host_ipv6={self.ipv6_address or "-"} '
+            f'client_ipv4={client_ipv4 or "-"} client_ipv6={client_ipv6 or "-"}'
+        )
         return build_message({
             'proto': PROTOCOL_VERSION,
             'type': 'offer',
@@ -970,6 +1078,10 @@ class Ros2BleGatewayNode(Node):
             'busy': '1' if busy else '0',
             'ipv4': self.ipv4_address,
             'ipv6': self.ipv6_address,
+            'host_ipv4': self.ipv4_address,
+            'host_ipv6': self.ipv6_address,
+            'client_ipv4': client_ipv4 or None,
+            'client_ipv6': client_ipv6 or None,
             'proof': offer_proof,
         })
 
@@ -1011,6 +1123,8 @@ class Ros2BleGatewayNode(Node):
 
         support_ipv4 = self.pending_offer.get('support_ipv4', '1') == '1'
         support_ipv6 = self.pending_offer.get('support_ipv6', '1') == '1'
+        client_ipv4 = self.pending_offer.get('client_ipv4', '')
+        client_ipv6 = self.pending_offer.get('client_ipv6', '')
         selected_family, selected_address, _ = self._choose_endpoint(support_ipv4, support_ipv6)
         if not selected_family or not selected_address:
             return self._build_busy_response(client_id, client_nonce, 'no_address')
@@ -1020,6 +1134,8 @@ class Ros2BleGatewayNode(Node):
             client_id=client_id,
             client_name=client_name,
             client_nonce=client_nonce,
+            client_ipv4=client_ipv4,
+            client_ipv6=client_ipv6,
             session_id=session_id,
             selected_family=selected_family,
             selected_address=selected_address,
@@ -1044,7 +1160,9 @@ class Ros2BleGatewayNode(Node):
             ]),
         )
         self.get_logger().info(
-            f'BLE paired client={client_id} family={selected_family} address={selected_address}:{self.control_port}'
+            f'BLE paired client={client_id} family={selected_family} address={selected_address}:{self.control_port} '
+            f'host_ipv4={self.ipv4_address or "-"} host_ipv6={self.ipv6_address or "-"} '
+            f'{self._client_ip_summary()}'
         )
         return build_message({
             'proto': PROTOCOL_VERSION,
@@ -1055,6 +1173,10 @@ class Ros2BleGatewayNode(Node):
             'control_port': str(self.control_port),
             'selected_family': selected_family,
             'address': selected_address,
+            'host_ipv4': self.ipv4_address,
+            'host_ipv6': self.ipv6_address,
+            'client_ipv4': client_ipv4 or None,
+            'client_ipv6': client_ipv6 or None,
             'proof': ack_proof,
         })
 

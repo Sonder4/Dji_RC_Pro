@@ -62,6 +62,15 @@ install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  enable_testing()
+  add_executable(test_client_address_snapshot
+    test/test_client_address_snapshot.cpp
+  )
+  target_include_directories(test_client_address_snapshot PRIVATE include)
+  add_test(NAME test_client_address_snapshot COMMAND test_client_address_snapshot)
+endif()
+
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME}_proto)
 ament_export_dependencies(rosidl_default_runtime)

@@ -32,6 +32,8 @@ class ConfigRepository private constructor(context: Context) {
         }
 
         private val KEY_TARGET_IP = stringPreferencesKey("target_ip")
+        private val KEY_TARGET_IPV4 = stringPreferencesKey("target_ipv4")
+        private val KEY_TARGET_IPV6 = stringPreferencesKey("target_ipv6")
         private val KEY_TARGET_PORT = intPreferencesKey("target_port")
         private val KEY_LOCAL_PORT = intPreferencesKey("local_port")
         private val KEY_CONNECTION_MODE = stringPreferencesKey("connection_mode")
@@ -52,6 +54,14 @@ class ConfigRepository private constructor(context: Context) {
 
     val targetPort: Flow<Int> = dataStore.data.map { prefs ->
         prefs[KEY_TARGET_PORT] ?: 1387
+    }
+
+    val targetIpv4: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[KEY_TARGET_IPV4]
+    }
+
+    val targetIpv6: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[KEY_TARGET_IPV6]
     }
 
     val localPort: Flow<Int> = dataStore.data.map { prefs ->
@@ -112,6 +122,26 @@ class ConfigRepository private constructor(context: Context) {
     suspend fun setTargetIp(ip: String) {
         dataStore.edit { prefs ->
             prefs[KEY_TARGET_IP] = ip
+        }
+    }
+
+    suspend fun setTargetIpv4(ip: String?) {
+        dataStore.edit { prefs ->
+            if (ip.isNullOrBlank()) {
+                prefs.remove(KEY_TARGET_IPV4)
+            } else {
+                prefs[KEY_TARGET_IPV4] = ip
+            }
+        }
+    }
+
+    suspend fun setTargetIpv6(ip: String?) {
+        dataStore.edit { prefs ->
+            if (ip.isNullOrBlank()) {
+                prefs.remove(KEY_TARGET_IPV6)
+            } else {
+                prefs[KEY_TARGET_IPV6] = ip
+            }
         }
     }
 
