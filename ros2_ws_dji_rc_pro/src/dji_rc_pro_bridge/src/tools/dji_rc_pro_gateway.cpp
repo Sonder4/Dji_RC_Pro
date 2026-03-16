@@ -30,12 +30,14 @@
 
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/header.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 
 #include "dji_rc_pro_bridge/client_address_snapshot.hpp"
 #include "dji_rc_pro_bridge/msg/chassis_ctrl.hpp"
+#include "dji_rc_pro_bridge/raw_input.hpp"
 #include "protocol/protocol_parser.hpp"
 
 namespace {
@@ -321,6 +323,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     lease_ms_ = this->declare_parameter<int>("lease_ms", kDefaultLeaseMs);
     require_ready_for_pairing_ = this->declare_parameter<bool>("require_ready_for_pairing", false);
     cmd_vel_topic_ = this->declare_parameter<std::string>("cmd_vel_topic", "/dji_rc_pro_bridge/cmd_vel");
+    joy_topic_ = this->declare_parameter<std::string>("joy_topic", "/dji_rc_pro_bridge/joy");
     raw_topic_ = this->declare_parameter<std::string>("raw_topic", "/dji_rc_pro_bridge/chassis_ctrl_raw");
     status_topic_ = this->declare_parameter<std::string>("status_topic", "/mcu_comm_node/status");
     ble_frame_topic_ = this->declare_parameter<std::string>("ble_frame_topic", "/dji_rc_pro_bridge/ble/control_frame");
@@ -342,6 +345,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     host_nonce_ = Sha256Hex(host_id_ + "|" + std::to_string(now_count) + "|" + std::to_string(::getpid())).substr(0, 32);
 
     cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(cmd_vel_topic_, 10);
+    joy_publisher_ = this->create_publisher<sensor_msgs::msg::Joy>(joy_topic_, 10);
     raw_publisher_ = this->create_publisher<dji_rc_pro_bridge::msg::ChassisCtrl>(raw_topic_, 10);
     transport_status_publisher_ = this->create_publisher<std_msgs::msg::String>(transport_status_topic_, 10);
     ble_frame_subscription_ = this->create_subscription<std_msgs::msg::UInt8MultiArray>(
@@ -394,11 +398,11 @@ class DjiRcProGatewayNode : public rclcpp::Node {
                 addresses.ipv4.empty() ? "-" : addresses.ipv4.c_str(),
                 addresses.ipv6.empty() ? "-" : addresses.ipv6.c_str());
     RCLCPP_INFO(this->get_logger(),
-                "首次配对引导: Pair Code/短码=%s, Bootstrap IPv6=%s, Bootstrap IPv4=%s, cmd_vel=%s, ble_frame=%s",
+                "首次配对引导: Pair Code/短码=%s, Bootstrap IPv6=%s, Bootstrap IPv4=%s, joy=%s, ble_frame=%s",
                 pair_code_.c_str(),
                 addresses.ipv6.empty() ? "-" : addresses.ipv6.c_str(),
                 addresses.ipv4.empty() ? "-" : addresses.ipv4.c_str(),
-                cmd_vel_topic_.c_str(),
+                joy_topic_.c_str(),
                 ble_frame_topic_.c_str());
   }
 
@@ -472,6 +476,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
   std::string pair_code_;
   TransportMode transport_mode_{TransportMode::kBleUdp};
   std::string cmd_vel_topic_;
+  std::string joy_topic_;
   std::string raw_topic_;
   std::string status_topic_;
   std::string ble_frame_topic_;
@@ -486,6 +491,7 @@ class DjiRcProGatewayNode : public rclcpp::Node {
   uint64_t session_counter_{0};
 
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Joy>::SharedPtr joy_publisher_;
   rclcpp::Publisher<dji_rc_pro_bridge::msg::ChassisCtrl>::SharedPtr raw_publisher_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr transport_status_publisher_;
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr ble_frame_subscription_;
@@ -1008,10 +1014,15 @@ class DjiRcProGatewayNode : public rclcpp::Node {
       if (!frame.verifyCRC()) {
         continue;
       }
-      if (frame.pid != static_cast<uint8_t>(dji_rc_pro_bridge::PacketID::CHASSIS_CTRL) || frame.data.size() < 8) {
+      if (frame.pid == static_cast<uint8_t>(dji_rc_pro_bridge::PacketID::RAW_INPUT) &&
+          frame.data.size() >= dji_rc_pro_bridge::kRawInputPayloadSize) {
+        PublishRawInput(frame.data);
         continue;
       }
-      PublishChassisControl(frame.data);
+      if (frame.pid == static_cast<uint8_t>(dji_rc_pro_bridge::PacketID::CHASSIS_CTRL) &&
+          frame.data.size() >= 8) {
+        PublishChassisControl(frame.data);
+      }
     }
   }
 
@@ -1126,6 +1137,24 @@ class DjiRcProGatewayNode : public rclcpp::Node {
     cmd_vel.linear.y = v * std::sin(d);
     cmd_vel.angular.z = w;
     cmd_vel_publisher_->publish(cmd_vel);
+  }
+
+  void PublishRawInput(const std::vector<uint8_t>& data) {
+    dji_rc_pro_bridge::RawInputState state;
+    if (!dji_rc_pro_bridge::DecodeRawInputPayload(data, &state)) {
+      return;
+    }
+
+    auto joy = dji_rc_pro_bridge::RawInputToJoyMessage(state);
+    joy.header.stamp = this->now();
+    joy.header.frame_id = "dji_rc_pro";
+    joy_publisher_->publish(joy);
+
+    RCLCPP_INFO_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "RAW_INPUT decoded: lx=%.3f ly=%.3f rx=%.3f ry=%.3f buttons=0x%08X lw=%.3f rw=%.3f",
+        joy.axes[0], joy.axes[1], joy.axes[2], joy.axes[3],
+        state.button_mask, joy.axes[4], joy.axes[5]);
   }
 
   void CleanupLease() {
