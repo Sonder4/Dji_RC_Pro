@@ -10,6 +10,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -19,11 +20,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 include_directories(include)
 
 add_library(${PROJECT_NAME}_proto SHARED
+  src/joy_mapper.cpp
+  src/raw_input.cpp
   src/protocol/protocol_parser.cpp
 )
 
 ament_target_dependencies(${PROJECT_NAME}_proto
   rclcpp
+  sensor_msgs
   std_msgs
 )
 
@@ -36,6 +40,16 @@ target_link_libraries(dji_rc_pro_gateway ${PROJECT_NAME}_proto "${cpp_typesuppor
 ament_target_dependencies(dji_rc_pro_gateway
   geometry_msgs
   rclcpp
+  sensor_msgs
+  std_msgs
+)
+
+add_executable(dji_rc_pro_joy_to_cmd_vel src/tools/dji_rc_pro_joy_to_cmd_vel.cpp)
+target_link_libraries(dji_rc_pro_joy_to_cmd_vel ${PROJECT_NAME}_proto "${cpp_typesupport_target}")
+ament_target_dependencies(dji_rc_pro_joy_to_cmd_vel
+  geometry_msgs
+  rclcpp
+  sensor_msgs
   std_msgs
 )
 
@@ -46,6 +60,10 @@ install(TARGETS ${PROJECT_NAME}_proto
 )
 
 install(TARGETS dji_rc_pro_gateway
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS dji_rc_pro_joy_to_cmd_vel
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -62,6 +80,10 @@ install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   enable_testing()
   add_executable(test_client_address_snapshot
@@ -69,6 +91,31 @@ if(BUILD_TESTING)
   )
   target_include_directories(test_client_address_snapshot PRIVATE include)
   add_test(NAME test_client_address_snapshot COMMAND test_client_address_snapshot)
+
+  add_executable(test_raw_input_bridge
+    test/test_raw_input_bridge.cpp
+  )
+  target_include_directories(test_raw_input_bridge PRIVATE include)
+  target_link_libraries(test_raw_input_bridge ${PROJECT_NAME}_proto "${cpp_typesupport_target}")
+  ament_target_dependencies(test_raw_input_bridge
+    rclcpp
+    sensor_msgs
+    std_msgs
+  )
+  add_test(NAME test_raw_input_bridge COMMAND test_raw_input_bridge)
+
+  add_executable(test_joy_mapper
+    test/test_joy_mapper.cpp
+  )
+  target_include_directories(test_joy_mapper PRIVATE include)
+  target_link_libraries(test_joy_mapper ${PROJECT_NAME}_proto "${cpp_typesupport_target}")
+  ament_target_dependencies(test_joy_mapper
+    geometry_msgs
+    rclcpp
+    sensor_msgs
+    std_msgs
+  )
+  add_test(NAME test_joy_mapper COMMAND test_joy_mapper)
 endif()
 
 ament_export_include_directories(include)

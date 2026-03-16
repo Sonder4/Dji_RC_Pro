@@ -1,8 +1,8 @@
 # 问题诊断与修复记录
 
-**文档版本**: 1.2  
+**文档版本**: 1.3  
 **最后更新**: 2026-03-16  
-**记录范围**: UDP通信模块调试全过程
+**记录范围**: UDP、BLE 与原始输入主链路调试全过程
 
 ---
 
@@ -15,6 +15,7 @@
 5. [问题四：IPv4 Ping 失败但 IPv6 与 UDP 正常](#5-问题四ipv4-ping-失败但-ipv6-与-udp-正常)
 6. [调试方法与工具](#6-调试方法与工具)
 7. [修复验证](#7-修复验证)
+8. [2026-03-16 主链路切换为原始输入协议](#10-2026-03-16-主链路切换为原始输入协议)
 
 ---
 
@@ -28,6 +29,7 @@
 | 2 | UDP服务启动后立即停止，无法持续发送数据 | 高 | ✅ 已修复 |
 | 3 | Socket绑定到IPv6地址 `::/::` 而非IPv4地址 | 中 | ✅ 已修复 |
 | 4 | IPv4 双向 Ping 失败，但 IPv6 与 UDP 主通道正常 | 高 | ✅ 已定位 |
+| 5 | 主链路需要切换为原始输入协议，`cmd_vel` 改由 ROS2 Joy 映射统一生成 | 高 | ✅ 已完成 |
 
 ---
 
@@ -554,6 +556,51 @@ while (frequencyManager == null && waitCount < 20) {
 - [UDP模块详细文档](./UDP_Module.md)
 - [API接口文档](./API_Reference.md)
 - [部署与使用指南](./Deployment_Guide.md)
+- [原始输入主链路设计](./plans/2026-03-16-raw-joy-mainline-design.md)
+- [原始输入主链路实施计划](./superpowers/plans/2026-03-16-raw-joy-mainline-port.md)
+
+---
+
+## 10. 2026-03-16 主链路切换为原始输入协议
+
+### 10.1 问题背景
+
+在 BLE 与 UDP 配对链路已经稳定后，主控制数据仍然由 Android 端直接发送速度语义帧 `PID=0x01`。这会带来三个问题：
+
+1. ROS2 侧拿不到真正的摇杆、按键、拨轮原始输入。
+2. 不同机器人如果需要不同速度映射，只能继续改 Android 端。
+3. 当 `cmd_vel` 没有数据时，难以区分是“链路没通”还是“Android 端映射有问题”。
+
+### 10.2 解决方案
+
+本轮改造将主链路改为：
+
+`ControllerState -> PID=0x09 原始输入帧 -> BLE/UDP -> ROS2 gateway -> /dji_rc_pro_bridge/joy -> dji_rc_pro_joy_to_cmd_vel -> /dji_rc_pro_bridge/cmd_vel`
+
+关键点如下：
+
+- Android 端 `Ros2ChassisControlPacket` 不再提前映射速度，而是直接打包原始输入。
+- 新协议 `PID=0x09` 负载长度为 10 字节，内容为摇杆、按键位图和左右拨轮。
+- ROS2 gateway 新增 `RawInput` 解码与 `joy_topic` 发布，默认话题为 `/dji_rc_pro_bridge/joy`。
+- ROS2 新增 `dji_rc_pro_joy_to_cmd_vel` 节点统一完成 `Joy -> cmd_vel` 映射。
+- 旧 `PID=0x01` 接收逻辑保留，仅用于兼容回退。
+
+### 10.3 兼容约束
+
+为了避免兼容期内出现双 publisher 混淆，本轮明确约束：
+
+- 现场同一时刻只启用一种发送协议。
+- 正常运行使用新协议 `PID=0x09`。
+- 若要回退验证旧协议 `PID=0x01`，应确保现场不同时混发 `PID=0x09`。
+
+### 10.4 验证结果
+
+- ✅ Android `UdpProtocolUnitTest` 全量通过
+- ✅ ROS2 `test_raw_input_bridge` 通过
+- ✅ ROS2 `test_joy_mapper` 通过
+- ✅ ROS2 工作区全量构建通过
+- ✅ BLE 网关 Python 回归 7 项通过
+- ✅ launch 文件 `py_compile` 语法检查通过
 
 ---
 

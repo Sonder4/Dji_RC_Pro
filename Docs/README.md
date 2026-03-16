@@ -20,6 +20,8 @@
 | **RC Pro ROS2 独立工作空间** | 独立 ROS2 bridge、局域网自动配对、首配兜底说明 | [04_Network_Improvement/DJI_RC_PRO_ROS2_WORKSPACE.md](./04_Network_Improvement/DJI_RC_PRO_ROS2_WORKSPACE.md) |
 | **BLE + UDP 系统设计** | BLE/UDP 三模式、自动配对、地址同步、实测闭环与代码索引 | [04_Network_Improvement/SYSTEM_DESIGN_BLE_UDP.md](./04_Network_Improvement/SYSTEM_DESIGN_BLE_UDP.md) |
 | **2026-03-16 联调记录** | 记录 BLE 配对、UDP 主通道、双端 IP 同步、IPv4/IPv6 实测、动态取址核对与剩余风险 | [04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-16.md](./04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-16.md) |
+| **原始输入主链路设计** | Android 原始输入协议、ROS2 Joy 映射节点、兼容约束与回退策略 | [plans/2026-03-16-raw-joy-mainline-design.md](./plans/2026-03-16-raw-joy-mainline-design.md) |
+| **原始输入主链路实施计划** | 面向 TDD 的任务拆分、测试命令、文件边界与提交节奏 | [superpowers/plans/2026-03-16-raw-joy-mainline-port.md](./superpowers/plans/2026-03-16-raw-joy-mainline-port.md) |
 
 ---
 
@@ -83,6 +85,12 @@
 - 双端 IPv4 / IPv6 同步与现场 `ping` 结果
 - 动态取址与残余硬编码回退项核对
 
+👉 阅读 [原始输入主链路设计](./plans/2026-03-16-raw-joy-mainline-design.md) 与 [实施计划](./superpowers/plans/2026-03-16-raw-joy-mainline-port.md) 了解：
+- Android 主发送链路为何从 `PID=0x01` 切换到 `PID=0x09`
+- `/dji_rc_pro_bridge/joy` 与 `joy_to_cmd_vel` 的职责边界
+- `udp_only` / `ble_only` / `ble_udp` 三模式下的新数据流
+- 兼容期“只启用一种发送协议”的约束
+
 ---
 
 ## 📋 文档结构
@@ -99,7 +107,10 @@ Docs/
 │   ├── DJI_RC_PRO_ROS2_WORKSPACE.md
 │   ├── SYSTEM_DESIGN_BLE_UDP.md
 │   └── INTEGRATED_TEST_RESULTS_2026-03-16.md
-└── development.md                    # 开发文档（原有）
+├── plans/                            # 已批准设计稿
+│   └── 2026-03-16-raw-joy-mainline-design.md
+└── superpowers/plans/                # 实施计划
+    └── 2026-03-16-raw-joy-mainline-port.md
 ```
 
 ---
@@ -151,6 +162,13 @@ MVVM Architecture
 - ✅ 新增 `2026-03-16` BLE + UDP 真机联调记录
 - ✅ 记录 BLE 配对载荷过大、状态载荷过大、通知不稳定与地址同步问题
 - ✅ 补充 IPv4 / IPv6 现场实测与动态取址核对结论
+
+### v1.2 (2026-03-16)
+
+- ✅ 主链路切换为 Android 原始输入协议 `PID=0x09`
+- ✅ ROS2 新增 `/dji_rc_pro_bridge/joy` 与 `dji_rc_pro_joy_to_cmd_vel`
+- ✅ 保留 `PID=0x01` 接收兼容期，并补充“现场不混发协议”的约束说明
+- ✅ 新增设计稿与实施计划文档
 
 ---
 

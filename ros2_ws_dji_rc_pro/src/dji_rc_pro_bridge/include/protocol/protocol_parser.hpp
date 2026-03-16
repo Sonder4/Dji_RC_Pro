@@ -52,6 +52,7 @@ enum class PacketID : uint8_t {
     MOTOR_DATA = 0x03,
     IMU_EULER = 0x04,
     IMU_QUATERNION = 0x05,
+    RAW_INPUT = 0x09,
     BATTERY_STATUS = 0x08,
     ROBOT_SWITCH = 0x06,
     SYSTEM_STATUS = 0x07,

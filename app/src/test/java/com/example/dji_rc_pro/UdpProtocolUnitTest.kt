@@ -59,98 +59,82 @@ class UdpProtocolUnitTest {
     }
 
     @Test
-    fun `build frame packs ros2 chassis payload and crc`() {
-        val payload = Ros2ChassisControlPacket.ChassisControlPayload(
-            vMpsMilli = 1000,
-            dRadMilli = 0,
-            wRadPsMilli = 250,
-            headingAngleMilli = 0
+    fun `build frame packs raw controller payload and crc`() {
+        val state = ControllerManager.ControllerState(
+            leftStickX = 0x12,
+            leftStickY = 0x34,
+            rightStickX = 0x56,
+            rightStickY = 0x78,
+            buttonMask = 0x89ABCDEF.toInt(),
+            leftWheel = 0x9A,
+            rightWheel = 0xBC
         )
 
-        val frame = Ros2ChassisControlPacket.buildFrame(payload)
+        val frame = Ros2ChassisControlPacket.fromControllerState(state)
 
-        assertEquals(18, frame.size)
+        assertEquals(20, frame.size)
         assertEquals(0x52.toByte(), frame[0])
         assertEquals(0x43.toByte(), frame[1])
         assertEquals(0x00.toByte(), frame[2])
         assertEquals(0x01.toByte(), frame[3])
-        assertEquals(0x0A.toByte(), frame[4])
-        assertEquals(0x01.toByte(), frame[5])
-        assertEquals(0x08.toByte(), frame[6])
-        assertEquals(0xE8.toByte(), frame[7])
-        assertEquals(0x03.toByte(), frame[8])
-        assertEquals(0xFA.toByte(), frame[11])
-        assertEquals(0x00.toByte(), frame[12])
-        assertEquals(0x00.toByte(), frame[13])
-        assertEquals(0x00.toByte(), frame[14])
-
-        val expectedCrc = Crc16.compute(frame.copyOfRange(5, 15))
-        val actualCrc = ((frame[15].toInt() and 0xFF) shl 8) or (frame[16].toInt() and 0xFF)
-        assertEquals(expectedCrc, actualCrc)
-        assertEquals(0xED.toByte(), frame[17])
-    }
-
-    @Test
-    fun `controller state maps to ros2 velocity vector semantics`() {
-        val neutral = Ros2ChassisControlPacket.createPayload(ControllerManager.ControllerState())
-        assertEquals(0, neutral.vMpsMilli)
-        assertEquals(0, neutral.dRadMilli)
-        assertEquals(0, neutral.wRadPsMilli)
-        assertEquals(0, neutral.headingAngleMilli)
-
-        val forward = Ros2ChassisControlPacket.createPayload(
-            ControllerManager.ControllerState(leftStickX = 255)
-        )
-        assertEquals(4000, forward.vMpsMilli)
-        assertEquals(0, forward.dRadMilli)
-
-        val left = Ros2ChassisControlPacket.createPayload(
-            ControllerManager.ControllerState(leftStickY = 255)
-        )
-        assertEquals(4000, left.vMpsMilli)
-        assertEquals(1571, left.dRadMilli)
-
-        val reverse = Ros2ChassisControlPacket.createPayload(
-            ControllerManager.ControllerState(leftStickX = 0)
-        )
-        assertEquals(4000, reverse.vMpsMilli)
-        assertEquals(3142, reverse.dRadMilli)
-
-        val diagonal = Ros2ChassisControlPacket.createPayload(
-            ControllerManager.ControllerState(leftStickX = 255, leftStickY = 255)
-        )
-        assertEquals(4000, diagonal.vMpsMilli)
-        assertEquals(785, diagonal.dRadMilli)
-
-        val rightTurn = Ros2ChassisControlPacket.createPayload(
-            ControllerManager.ControllerState(rightStickX = 255)
-        )
-        assertEquals(6283, rightTurn.wRadPsMilli)
-
-        val leftTurn = Ros2ChassisControlPacket.createPayload(
-            ControllerManager.ControllerState(rightStickX = 0)
-        )
-        assertEquals(-6283, leftTurn.wRadPsMilli)
-    }
-
-    @Test
-    fun `frame payload uses little endian int16 ordering`() {
-        val payload = Ros2ChassisControlPacket.ChassisControlPayload(
-            vMpsMilli = 0x1234,
-            dRadMilli = 0x2345,
-            wRadPsMilli = -2,
-            headingAngleMilli = 0x3456
-        )
-
-        val frame = Ros2ChassisControlPacket.buildFrame(payload)
+        assertEquals(0x0C.toByte(), frame[4])
+        assertEquals(0x09.toByte(), frame[5])
+        assertEquals(0x0A.toByte(), frame[6])
         assertArrayEquals(
             byteArrayOf(
-                0x34, 0x12,
-                0x45, 0x23,
-                0xFE.toByte(), 0xFF.toByte(),
-                0x56, 0x34
+                0x12, 0x34, 0x56, 0x78,
+                0xEF.toByte(), 0xCD.toByte(), 0xAB.toByte(), 0x89.toByte(),
+                0x9A.toByte(), 0xBC.toByte()
             ),
-            frame.copyOfRange(7, 15)
+            frame.copyOfRange(7, 17)
+        )
+
+        val expectedCrc = Crc16.compute(frame.copyOfRange(5, 17))
+        val actualCrc = ((frame[17].toInt() and 0xFF) shl 8) or (frame[18].toInt() and 0xFF)
+        assertEquals(expectedCrc, actualCrc)
+        assertEquals(0xED.toByte(), frame[19])
+    }
+
+    @Test
+    fun `controller state raw values are forwarded without semantic mapping`() {
+        val frame = Ros2ChassisControlPacket.fromControllerState(
+            ControllerManager.ControllerState(
+                leftStickX = 0,
+                leftStickY = 255,
+                rightStickX = 1,
+                rightStickY = 254,
+                buttonMask = 0x01020304,
+                leftWheel = 5,
+                rightWheel = 250
+            )
+        )
+
+        assertArrayEquals(
+            byteArrayOf(
+                0x00, 0xFF.toByte(), 0x01, 0xFE.toByte(),
+                0x04, 0x03, 0x02, 0x01,
+                0x05, 0xFA.toByte()
+            ),
+            frame.copyOfRange(7, 17)
+        )
+    }
+
+    @Test
+    fun `frame payload uses little endian uint32 button mask ordering`() {
+        val frame = Ros2ChassisControlPacket.fromControllerState(
+            ControllerManager.ControllerState(
+                buttonMask = 0x12345678,
+                leftWheel = 0x11,
+                rightWheel = 0x22
+            )
+        )
+
+        assertArrayEquals(
+            byteArrayOf(
+                0x78, 0x56, 0x34, 0x12,
+                0x11, 0x22
+            ),
+            frame.copyOfRange(11, 17)
         )
     }
 }
