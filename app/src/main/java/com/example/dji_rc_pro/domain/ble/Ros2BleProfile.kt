@@ -190,6 +190,14 @@ object Ros2BleProfile {
         )
     }
 
+    fun isPairProbeEcho(payload: ByteArray, probeState: PairProbeState): Boolean {
+        val fields = parseKeyValuePayload(payload)
+        return fields["v"] == COMPACT_VERSION &&
+            fields["t"] == "p" &&
+            fields["c"] == probeState.clientId &&
+            fields["n"] == probeState.clientNonce
+    }
+
     fun createPendingPairContext(
         host: DiscoveryProtocol.DiscoveredHost,
         probeState: PairProbeState
@@ -276,6 +284,16 @@ object Ros2BleProfile {
             controlPort = controlPort,
             selectedFamily = selectedFamily
         )
+    }
+
+    fun isPairRequestEcho(payload: ByteArray, context: PendingPairContext): Boolean {
+        val fields = parseKeyValuePayload(payload)
+        return fields["v"] == COMPACT_VERSION &&
+            fields["t"] == "r" &&
+            fields["h"] == context.hostId &&
+            fields["c"] == context.clientId &&
+            fields["n"] == context.clientNonce &&
+            fields["o"] == context.hostNonce
     }
 
     fun parsePairBusy(payload: ByteArray, context: PendingPairContext): DiscoveryProtocol.PairBusy? {

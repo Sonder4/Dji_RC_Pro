@@ -739,23 +739,12 @@ class Ros2BleGatewayNode(Node):
         return build_message({
             'v': BLE_COMPACT_VERSION,
             't': 'n',
-            'h': self.host_id,
-            's': self.lease.session_id or None,
             '4': self.ipv4_address,
             '6': self.ipv6_address,
-            'host_ipv4': self.ipv4_address,
-            'host_ipv6': self.ipv6_address,
             'c4': self.lease.client_ipv4 or None,
             'c6': self.lease.client_ipv6 or None,
-            'client_ipv4': self.lease.client_ipv4 or None,
-            'client_ipv6': self.lease.client_ipv6 or None,
-            'pf': compact_family_to_wire(preferred_family),
             'f': compact_family_to_wire(selected_family),
-            'a': selected_address,
-            'p': str(self.control_port),
-            'l': str(self.lease_ms),
             'b': '1' if self._lease_active() else '0',
-            'ble_state': self._ble_state_value(),
         })
 
     def build_status_payload(self) -> bytes:
@@ -763,22 +752,15 @@ class Ros2BleGatewayNode(Node):
         return build_message({
             'v': BLE_COMPACT_VERSION,
             't': 's',
-            'h': self.host_id,
-            's': self.lease.session_id or None,
             'f': compact_family_to_wire(selected_family),
-            'a': selected_address,
-            'p': str(self.control_port),
+            '4': self.ipv4_address,
+            '6': self.ipv6_address,
+            'c4': self.lease.client_ipv4 or None,
+            'c6': self.lease.client_ipv6 or None,
             'u': '1' if self.udp_active else '0',
             'b': '1' if self._lease_active() else '0',
             'k': '1' if self.mcu_ready else '0',
             'd': '1' if self._lease_active() else '0',
-            'host_ipv4': self.ipv4_address,
-            'host_ipv6': self.ipv6_address,
-            'c4': self.lease.client_ipv4 or None,
-            'c6': self.lease.client_ipv6 or None,
-            'client_ipv4': self.lease.client_ipv4 or None,
-            'client_ipv6': self.lease.client_ipv6 or None,
-            'ble_state': self._ble_state_value(),
         })
 
     def handle_pair_control_write(self, payload: bytes) -> Optional[bytes]:
@@ -901,8 +883,6 @@ class Ros2BleGatewayNode(Node):
             'l': str(self.lease_ms),
             'f': family_wire,
             'a': selected_address,
-            'host_ipv4': self.ipv4_address,
-            'host_ipv6': self.ipv6_address,
             'r': '1' if ready else '0',
             'b': '1' if busy else '0',
             'm': offer_proof,
@@ -987,8 +967,6 @@ class Ros2BleGatewayNode(Node):
             'p': str(self.control_port),
             'f': family_wire,
             'a': selected_address,
-            'host_ipv4': self.ipv4_address,
-            'host_ipv6': self.ipv6_address,
             'm': ack_proof,
         })
 

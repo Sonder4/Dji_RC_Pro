@@ -2,7 +2,7 @@
 
 **项目代号**: NCU-RC2026  
 **文档版本**: 1.0  
-**最后更新**: 2026-03-09
+**最后更新**: 2026-03-16
 
 ---
 
@@ -19,6 +19,7 @@
 | **部署使用指南** | 环境配置、编译安装、使用说明 | [Deployment_Guide.md](./Deployment_Guide.md) |
 | **RC Pro ROS2 独立工作空间** | 独立 ROS2 bridge、局域网自动配对、首配兜底说明 | [04_Network_Improvement/DJI_RC_PRO_ROS2_WORKSPACE.md](./04_Network_Improvement/DJI_RC_PRO_ROS2_WORKSPACE.md) |
 | **BLE + UDP 系统设计** | BLE/UDP 三模式、自动配对、地址同步、实测闭环与代码索引 | [04_Network_Improvement/SYSTEM_DESIGN_BLE_UDP.md](./04_Network_Improvement/SYSTEM_DESIGN_BLE_UDP.md) |
+| **2026-03-16 联调记录** | 记录 BLE 配对、UDP 主通道、双端 IP 同步、IPv4/IPv6 实测、动态取址核对与剩余风险 | [04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-16.md](./04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-16.md) |
 
 ---
 
@@ -76,6 +77,12 @@
 - Android 与 ROS2 两侧的关键代码入口
 - 实机联调证据与日志位置
 
+👉 阅读 [2026-03-16 BLE + UDP 联调记录](./04_Network_Improvement/INTEGRATED_TEST_RESULTS_2026-03-16.md) 了解：
+- 本轮真机问题现象、根因和解决方案
+- BLE 载荷裁剪与轮询回退策略
+- 双端 IPv4 / IPv6 同步与现场 `ping` 结果
+- 动态取址与残余硬编码回退项核对
+
 ---
 
 ## 📋 文档结构
@@ -90,7 +97,8 @@ Docs/
 ├── Deployment_Guide.md                # 部署与使用指南
 ├── 04_Network_Improvement/           # 网络与 ROS2 接入改造
 │   ├── DJI_RC_PRO_ROS2_WORKSPACE.md
-│   └── SYSTEM_DESIGN_BLE_UDP.md
+│   ├── SYSTEM_DESIGN_BLE_UDP.md
+│   └── INTEGRATED_TEST_RESULTS_2026-03-16.md
 └── development.md                    # 开发文档（原有）
 ```
 
@@ -138,6 +146,12 @@ MVVM Architecture
 - ✅ 编写完整技术文档
 - ✅ 记录问题诊断过程
 
+### v1.1 (2026-03-16)
+
+- ✅ 新增 `2026-03-16` BLE + UDP 真机联调记录
+- ✅ 记录 BLE 配对载荷过大、状态载荷过大、通知不稳定与地址同步问题
+- ✅ 补充 IPv4 / IPv6 现场实测与动态取址核对结论
+
 ---
 
 ## 🤝 贡献
@@ -158,4 +172,4 @@ MVVM Architecture
 ---
 
 **维护者**: NCU-RC2026 开发团队  
-**最后更新**: 2026-03-09
+**最后更新**: 2026-03-16

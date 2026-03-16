@@ -491,11 +491,22 @@ class BleManager private constructor(context: Context) {
 
                 pendingProbeAfterNotify = true
                 ros2PairControlNotifyReady = false
-                ros2PairControlPollingMode = !bleOnlyMode
-                if (bleOnlyMode) {
+                val pairControlDelivery = Ros2BlePairControlDeliveryResolver.resolve(
+                    transportMode = currentTransportMode,
+                    supportsNotify = supportsGattNotify(pairControlCharacteristic)
+                )
+                ros2PairControlPollingMode =
+                    pairControlDelivery == Ros2BlePairControlDelivery.POLL_ONLY
+                if (pairControlDelivery == Ros2BlePairControlDelivery.NOTIFY_WITH_POLL_FALLBACK) {
+                    LogUtil.i(
+                        "ROS2 BLE enabling pair_control notifications with polling fallback",
+                        TAG
+                    )
+                    enableNotifications(gatt, pairControlCharacteristic!!)
+                } else if (bleOnlyMode) {
                     maybeDispatchRos2PairProbe("services_discovered_ble_only")
                 } else {
-                    LogUtil.i("ROS2 BLE using pair_control polling instead of CCCD notifications", TAG)
+                    LogUtil.i("ROS2 BLE using pair_control polling fallback only", TAG)
                     maybeDispatchRos2PairProbe("services_discovered_ble_udp")
                 }
                 return
@@ -754,7 +765,6 @@ class BleManager private constructor(context: Context) {
 
     private fun handleRos2PairControlMessage(data: ByteArray, deviceAddress: String?) {
         val payload = data.toString(Charsets.UTF_8)
-        val sourceAddress = deviceAddress.orEmpty()
         LogUtil.d(
             "ROS2 BLE pair_control message bytes=${data.size} payload=${payload.replace('\n', '|')}",
             TAG
@@ -835,6 +845,24 @@ class BleManager private constructor(context: Context) {
                     level = LogLevel.WARN,
                     macAddress = deviceAddress
                 )
+                return
+            }
+        }
+
+        if (!ros2PairControlNotifyReady && !_ros2GatewaySession.value.paired) {
+            probeState?.let { currentProbe ->
+                if (Ros2BleProfile.isPairProbeEcho(data, currentProbe)) {
+                    LogUtil.d("ROS2 BLE pair_control returned probe echo, retrying poll", TAG)
+                    scheduleRos2SessionReadRetry("pair_control_probe_echo")
+                    return
+                }
+            }
+            pendingPairContext?.let { context ->
+                if (Ros2BleProfile.isPairRequestEcho(data, context)) {
+                    LogUtil.d("ROS2 BLE pair_control returned pair request echo, retrying poll", TAG)
+                    scheduleRos2SessionReadRetry("pair_control_request_echo")
+                    return
+                }
             }
         }
     }
@@ -1494,6 +1522,11 @@ class BleManager private constructor(context: Context) {
             return "0x${properties.toString(16)}"
         }
         return labels.joinToString("|")
+    }
+
+    private fun supportsGattNotify(characteristic: BluetoothGattCharacteristic?): Boolean {
+        val properties = characteristic?.properties ?: return false
+        return properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0
     }
 
     private fun stopWriteProcessor() {
