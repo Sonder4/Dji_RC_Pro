@@ -1,0 +1,22 @@
+dji_rc_pro_joy_to_cmd_vel:
+  ros__parameters:
+    use_sim_time: false
+    robot_base_frame: base_link
+    control_mode: manual_control
+
+    require_enable_button: false
+    enable_button: 4
+    enable_turbo_button: 5
+
+    axis_chassis:
+      x: 1
+      y: 0
+      yaw: 2
+    scale_chassis:
+      x: 1.0
+      y: -1.0
+      yaw: 1.0
+    scale_chassis_turbo:
+      x: 1.0
+      y: -1.0
+      yaw: 1.0
